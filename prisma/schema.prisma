@@ -1,0 +1,618 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider     = "postgresql"
+  url          = env("DATABASE_URL")
+  relationMode = "foreignKeys"
+}
+
+enum TenantStatus {
+  ACTIVE
+  SUSPENDED
+  DISABLED
+}
+
+enum MerchantStatus {
+  ACTIVE
+  SUSPENDED
+  DISABLED
+}
+
+enum ProviderCode {
+  SCB
+  KBANK
+  PROMPTPAY
+  INTERNAL
+}
+
+enum BillerStatus {
+  ACTIVE
+  INACTIVE
+  DISABLED
+}
+
+enum RouteStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum PaymentMethodType {
+  PROMPTPAY_QR
+  DEEPLINK
+  BILL_PAYMENT
+  CARD
+  BANK_TRANSFER
+  E_WALLET
+}
+
+enum CurrencyCode {
+  THB
+}
+
+enum PaymentIntentStatus {
+  CREATED
+  ROUTING
+  PENDING_PROVIDER
+  AWAITING_CUSTOMER
+  PROCESSING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+  EXPIRED
+  REVERSED
+  REFUNDED
+}
+
+enum PaymentEventType {
+  PAYMENT_CREATED
+  ROUTE_RESOLVED
+  PROVIDER_REQUESTED
+  PROVIDER_ACCEPTED
+  PROVIDER_REJECTED
+  PROVIDER_CALLBACK_RECEIVED
+  PROVIDER_CALLBACK_PROCESSED
+  PAYMENT_PENDING
+  PAYMENT_SUCCEEDED
+  PAYMENT_FAILED
+  PAYMENT_CANCELLED
+  PAYMENT_EXPIRED
+  PAYMENT_REVERSED
+  PAYMENT_REFUNDED
+  WEBHOOK_QUEUED
+  WEBHOOK_DELIVERED
+  WEBHOOK_FAILED
+  RECONCILIATION_REQUESTED
+  RECONCILIATION_MATCHED
+  RECONCILIATION_MISMATCH
+  MANUAL_NOTE
+}
+
+enum ProviderAttemptType {
+  CREATE_PAYMENT
+  CREATE_QR
+  INQUIRY
+  CANCEL
+  REFUND
+  CALLBACK_PROCESS
+  TOKEN_REFRESH
+}
+
+enum ProviderAttemptStatus {
+  PENDING
+  SENT
+  ACKNOWLEDGED
+  SUCCEEDED
+  FAILED
+  TIMEOUT
+}
+
+enum CallbackProcessStatus {
+  RECEIVED
+  QUEUED
+  PROCESSING
+  PROCESSED
+  DUPLICATE
+  FAILED
+  IGNORED
+}
+
+enum WebhookEndpointStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum WebhookDeliveryStatus {
+  PENDING
+  PROCESSING
+  DELIVERED
+  FAILED
+  RETRYING
+  DEAD
+}
+
+enum ReconciliationStatus {
+  PENDING
+  MATCHED
+  MISMATCH
+  CORRECTED
+  FAILED
+}
+
+enum AuditActorType {
+  SYSTEM
+  API_KEY
+  USER
+  WORKER
+  PROVIDER
+}
+
+enum AuditSeverity {
+  INFO
+  WARNING
+  ERROR
+  CRITICAL
+}
+
+enum ArchiveKind {
+  PROVIDER_REQUEST
+  PROVIDER_RESPONSE
+  PROVIDER_CALLBACK
+  MERCHANT_WEBHOOK_REQUEST
+  MERCHANT_WEBHOOK_RESPONSE
+  API_REQUEST
+  API_RESPONSE
+}
+
+model Tenant {
+  id               String             @id @default(cuid())
+  code             String             @unique
+  name             String
+  status           TenantStatus       @default(ACTIVE)
+  defaultCurrency  CurrencyCode       @default(THB)
+  metadata         Json?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  merchants        MerchantAccount[]
+  billerProfiles   BillerProfile[]
+  paymentRoutes    PaymentRoute[]
+  paymentIntents   PaymentIntent[]
+  webhookEndpoints WebhookEndpoint[]
+  apiKeys          ApiKey[]
+  auditLogs        AuditLog[]
+  idempotencyKeys  IdempotencyKey[]
+
+  @@index([status])
+  @@map("tenants")
+}
+
+model MerchantAccount {
+  id               String          @id @default(cuid())
+  tenantId         String
+  code             String
+  name             String
+  status           MerchantStatus  @default(ACTIVE)
+  callbackBaseUrl  String?
+  contactEmail     String?
+  metadata         Json?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  tenant           Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  paymentIntents   PaymentIntent[]
+  webhookEndpoints WebhookEndpoint[]
+  apiKeys          ApiKey[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId, status])
+  @@map("merchant_accounts")
+}
+
+model ApiKey {
+  id                String           @id @default(cuid())
+  tenantId          String
+  merchantAccountId String?
+
+  keyPrefix         String
+  secretHash        String
+  name              String
+  status            MerchantStatus   @default(ACTIVE)
+
+  scopes            String[]
+
+  environment       String           @default("test")
+  lastUsedAt        DateTime?
+  expiresAt         DateTime?
+  revokedAt         DateTime?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  tenant            Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  merchantAccount   MerchantAccount? @relation(fields: [merchantAccountId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, keyPrefix])
+  @@index([keyPrefix])
+  @@index([tenantId, merchantAccountId, status])
+  @@index([revokedAt])
+  @@map("api_keys")
+}
+
+model BillerProfile {
+  id                    String                 @id @default(cuid())
+  tenantId              String
+  code                  String
+  displayName           String
+  providerCode          ProviderCode
+  billerId              String?
+  merchantIdAtProvider  String?
+  status                BillerStatus           @default(ACTIVE)
+  priority              Int                    @default(100)
+  credentialsEncrypted  Json
+  config                Json?
+  metadata              Json?
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+
+  tenant                Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  paymentRoutes         PaymentRoute[]
+  paymentIntents        PaymentIntent[]
+  providerAttempts      ProviderAttempt[]
+  providerCallbacks     ProviderCallback[]
+  reconciliationRecords ReconciliationRecord[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId, providerCode, status])
+  @@index([tenantId, billerId])
+  @@map("biller_profiles")
+}
+
+model PaymentRoute {
+  id                String            @id @default(cuid())
+  tenantId          String
+  code              String
+  paymentMethodType PaymentMethodType
+  providerCode      ProviderCode
+  billerProfileId   String
+  currency          CurrencyCode      @default(THB)
+  isDefault         Boolean           @default(false)
+  priority          Int               @default(100)
+  status            RouteStatus       @default(ACTIVE)
+  rules             Json?
+  metadata          Json?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  tenant            Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  billerProfile     BillerProfile     @relation(fields: [billerProfileId], references: [id], onDelete: Restrict)
+  paymentIntents    PaymentIntent[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId, paymentMethodType, currency, status, priority])
+  @@index([tenantId, providerCode, status])
+  @@index([billerProfileId])
+  @@map("payment_routes")
+}
+
+model PaymentIntent {
+  id                    String                @id @default(cuid())
+  tenantId              String
+  merchantAccountId     String?
+  paymentRouteId        String?
+  billerProfileId       String?
+
+  publicId              String                @unique
+  merchantOrderId       String?
+  merchantReference     String?
+  idempotencyKeyValue   String?
+
+  paymentMethodType     PaymentMethodType
+  providerCode          ProviderCode?
+  currency              CurrencyCode          @default(THB)
+
+  amount                Decimal               @db.Decimal(18, 2)
+  feeAmount             Decimal               @default(0) @db.Decimal(18, 2)
+  netAmount             Decimal               @default(0) @db.Decimal(18, 2)
+
+  status                PaymentIntentStatus   @default(CREATED)
+
+  providerReference     String?
+  providerTransactionId String?
+  providerQrRef         String?
+
+  qrPayload             String?
+  deeplinkUrl           String?
+  redirectUrl           String?
+
+  customerName          String?
+  customerEmail         String?
+  customerPhone         String?
+
+  requestedAt           DateTime              @default(now())
+  expiresAt             DateTime?
+  succeededAt           DateTime?
+  failedAt              DateTime?
+  cancelledAt           DateTime?
+
+  lastReconciledAt      DateTime?
+  metadata              Json?
+  extra                 Json?
+
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
+
+  tenant                Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  merchantAccount       MerchantAccount?      @relation(fields: [merchantAccountId], references: [id], onDelete: SetNull)
+  paymentRoute          PaymentRoute?         @relation(fields: [paymentRouteId], references: [id], onDelete: SetNull)
+  billerProfile         BillerProfile?        @relation(fields: [billerProfileId], references: [id], onDelete: SetNull)
+
+  events                PaymentEvent[]
+  providerAttempts      ProviderAttempt[]
+  providerCallbacks     ProviderCallback[]
+  webhookDeliveries     WebhookDelivery[]
+  reconciliationRecords ReconciliationRecord[]
+  payloadArchives       PayloadArchive[]
+
+  @@unique([tenantId, merchantOrderId])
+  @@index([tenantId, status, createdAt])
+  @@index([tenantId, paymentMethodType, status, createdAt])
+  @@index([tenantId, merchantReference])
+  @@index([tenantId, providerReference])
+  @@index([tenantId, providerTransactionId])
+  @@index([merchantAccountId, createdAt])
+  @@index([billerProfileId, createdAt])
+  @@index([expiresAt])
+  @@map("payment_intents")
+}
+
+model PaymentEvent {
+  id              String              @id @default(cuid())
+  paymentIntentId String
+  type            PaymentEventType
+  fromStatus      PaymentIntentStatus?
+  toStatus        PaymentIntentStatus?
+  summary         String?
+  payload         Json?
+  createdAt       DateTime            @default(now())
+
+  paymentIntent   PaymentIntent       @relation(fields: [paymentIntentId], references: [id], onDelete: Cascade)
+
+  @@index([paymentIntentId, createdAt])
+  @@index([type, createdAt])
+  @@map("payment_events")
+}
+
+model ProviderAttempt {
+  id                 String                @id @default(cuid())
+  paymentIntentId    String?
+  billerProfileId    String
+  type               ProviderAttemptType
+  status             ProviderAttemptStatus @default(PENDING)
+  requestId          String                @unique
+  idempotencyKeySent String?
+  providerCode       ProviderCode
+  providerEndpoint   String?
+  httpMethod         String?
+  httpStatusCode     Int?
+  requestHeaders     Json?
+  requestBody        Json?
+  responseHeaders    Json?
+  responseBody       Json?
+  providerReference  String?
+  providerTxnId      String?
+  errorCode          String?
+  errorMessage       String?
+  sentAt             DateTime?
+  completedAt        DateTime?
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
+
+  paymentIntent      PaymentIntent?        @relation(fields: [paymentIntentId], references: [id], onDelete: SetNull)
+  billerProfile      BillerProfile         @relation(fields: [billerProfileId], references: [id], onDelete: Restrict)
+  payloadArchives    PayloadArchive[]
+
+  @@index([paymentIntentId, createdAt])
+  @@index([billerProfileId, type, createdAt])
+  @@index([providerCode, type, status, createdAt])
+  @@index([providerReference])
+  @@index([providerTxnId])
+  @@map("provider_attempts")
+}
+
+model ProviderCallback {
+  id                 String                @id @default(cuid())
+  paymentIntentId    String?
+  billerProfileId    String?
+  providerCode       ProviderCode
+  callbackType       String?
+  processStatus      CallbackProcessStatus @default(RECEIVED)
+  providerReference  String?
+  providerTxnId      String?
+  signatureValid     Boolean?
+  dedupeKey          String?
+  headers            Json?
+  queryParams        Json?
+  body               Json?
+  receivedAt         DateTime              @default(now())
+  queuedAt           DateTime?
+  processedAt        DateTime?
+  failedAt           DateTime?
+  errorMessage       String?
+  rawBodySha256      String?
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
+
+  paymentIntent      PaymentIntent?        @relation(fields: [paymentIntentId], references: [id], onDelete: SetNull)
+  billerProfile      BillerProfile?        @relation(fields: [billerProfileId], references: [id], onDelete: SetNull)
+  payloadArchives    PayloadArchive[]
+
+  @@unique([providerCode, dedupeKey])
+  @@index([paymentIntentId, receivedAt])
+  @@index([billerProfileId, receivedAt])
+  @@index([providerCode, processStatus, receivedAt])
+  @@index([providerReference])
+  @@index([providerTxnId])
+  @@map("provider_callbacks")
+}
+
+model WebhookEndpoint {
+  id                String                @id @default(cuid())
+  tenantId          String
+  merchantAccountId String?
+  code              String
+  url               String
+  secretHash        String
+  status            WebhookEndpointStatus @default(ACTIVE)
+  subscribedEvents  String[]
+  timeoutMs         Int                   @default(10000)
+  maxAttempts       Int                   @default(10)
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+
+  tenant            Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  merchantAccount   MerchantAccount?      @relation(fields: [merchantAccountId], references: [id], onDelete: SetNull)
+  deliveries        WebhookDelivery[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId, status])
+  @@index([merchantAccountId, status])
+  @@map("webhook_endpoints")
+}
+
+model WebhookDelivery {
+  id                 String                @id @default(cuid())
+  paymentIntentId    String
+  webhookEndpointId  String
+  eventType          PaymentEventType
+  status             WebhookDeliveryStatus @default(PENDING)
+  attemptNumber      Int                   @default(0)
+  nextAttemptAt      DateTime?
+  deliveredAt        DateTime?
+  lastErrorAt        DateTime?
+  requestHeaders     Json?
+  requestBody        Json?
+  responseStatusCode Int?
+  responseHeaders    Json?
+  responseBody       Json?
+  signature          String?
+  idempotencyKey     String?
+  errorMessage       String?
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
+
+  paymentIntent      PaymentIntent         @relation(fields: [paymentIntentId], references: [id], onDelete: Cascade)
+  webhookEndpoint    WebhookEndpoint       @relation(fields: [webhookEndpointId], references: [id], onDelete: Cascade)
+  payloadArchives    PayloadArchive[]
+
+  @@index([paymentIntentId, createdAt])
+  @@index([webhookEndpointId, status, nextAttemptAt])
+  @@index([status, nextAttemptAt])
+  @@map("webhook_deliveries")
+}
+
+model ReconciliationRecord {
+  id                  String               @id @default(cuid())
+  paymentIntentId     String
+  billerProfileId     String
+  status              ReconciliationStatus @default(PENDING)
+  inquiryAttemptCount Int                  @default(0)
+  providerReference   String?
+  providerTxnId       String?
+  providerSnapshot    Json?
+  internalSnapshot    Json?
+  mismatchReason      String?
+  correctionApplied   Boolean              @default(false)
+  correctionNote      String?
+  checkedAt           DateTime?
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+
+  paymentIntent       PaymentIntent        @relation(fields: [paymentIntentId], references: [id], onDelete: Cascade)
+  billerProfile       BillerProfile        @relation(fields: [billerProfileId], references: [id], onDelete: Restrict)
+
+  @@index([paymentIntentId, createdAt])
+  @@index([billerProfileId, status, createdAt])
+  @@index([status, createdAt])
+  @@map("reconciliation_records")
+}
+
+model IdempotencyKey {
+  id                 String    @id @default(cuid())
+  tenantId           String
+  key                String
+  requestPath        String
+  requestMethod      String
+  requestHash        String
+  responseStatusCode Int?
+  responseBody       Json?
+  resourceType       String?
+  resourceId         String?
+  lockedAt           DateTime?
+  completedAt        DateTime?
+  expiresAt          DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  tenant             Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, key])
+  @@index([tenantId, requestPath, requestMethod])
+  @@index([expiresAt])
+  @@map("idempotency_keys")
+}
+
+model AuditLog {
+  id         String         @id @default(cuid())
+  tenantId   String?
+  actorType  AuditActorType
+  actorId    String?
+  action     String
+  entityType String
+  entityId   String?
+  severity   AuditSeverity  @default(INFO)
+  message    String?
+  metadata   Json?
+  requestId  String?
+  traceId    String?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime       @default(now())
+
+  tenant     Tenant?        @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, createdAt])
+  @@index([entityType, entityId, createdAt])
+  @@index([action, createdAt])
+  @@index([requestId])
+  @@index([traceId])
+  @@map("audit_logs")
+}
+
+model PayloadArchive {
+  id                 String            @id @default(cuid())
+  paymentIntentId    String?
+  providerAttemptId  String?
+  providerCallbackId String?
+  webhookDeliveryId  String?
+  kind               ArchiveKind
+  storageDriver      String
+  storageKey         String
+  contentType        String?
+  sha256             String?
+  byteSize           Int?
+  metadata           Json?
+  createdAt          DateTime          @default(now())
+
+  paymentIntent      PaymentIntent?    @relation(fields: [paymentIntentId], references: [id], onDelete: SetNull)
+  providerAttempt    ProviderAttempt?  @relation(fields: [providerAttemptId], references: [id], onDelete: SetNull)
+  providerCallback   ProviderCallback? @relation(fields: [providerCallbackId], references: [id], onDelete: SetNull)
+  webhookDelivery    WebhookDelivery?  @relation(fields: [webhookDeliveryId], references: [id], onDelete: SetNull)
+
+  @@index([paymentIntentId, kind, createdAt])
+  @@index([providerAttemptId])
+  @@index([providerCallbackId])
+  @@index([webhookDeliveryId])
+  @@index([storageDriver, storageKey])
+  @@map("payload_archives")
+}

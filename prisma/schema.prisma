@@ -165,6 +165,14 @@ enum ArchiveKind {
   API_RESPONSE
 }
 
+enum WebhookStatus {
+  RECEIVED
+  VERIFIED
+  PROCESSED
+  FAILED
+  DUPLICATE
+}
+
 model Tenant {
   id               String             @id @default(cuid())
   code             String             @unique
@@ -615,4 +623,21 @@ model PayloadArchive {
   @@index([webhookDeliveryId])
   @@index([storageDriver, storageKey])
   @@map("payload_archives")
+}
+
+model WebhookEvent {
+  id          String   @id @default(uuid())
+  provider    String
+  eventId     String
+  merchantId  String?
+  payload     String
+  headers     Json
+  status      WebhookStatus
+  error       String?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([provider, eventId])
+  @@index([status])
 }

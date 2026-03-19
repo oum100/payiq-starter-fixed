@@ -1,10 +1,7 @@
 import { redis } from "../redis";
-import { buildRateLimitKey } from "./keys";
+import { buildRateLimitKey, buildTempBlockKey } from "./keys";
 import { TOKEN_BUCKET_LUA } from "./script";
-import type {
-  RateLimitDecision,
-  ResolvedRateLimitPolicy,
-} from "./types";
+import type { RateLimitDecision, ResolvedRateLimitPolicy } from "./types";
 
 let tokenBucketSha: string | null = null;
 
@@ -37,6 +34,7 @@ export class RateLimitService {
         policy.refillRatePerSec,
         policy.cost,
         policy.ttlSec,
+        policy.blockDurationSec,
       )) as unknown[];
     } catch {
       raw = (await redis.eval(
@@ -48,6 +46,7 @@ export class RateLimitService {
         policy.refillRatePerSec,
         policy.cost,
         policy.ttlSec,
+        policy.blockDurationSec,
       )) as unknown[];
     }
 
@@ -56,7 +55,18 @@ export class RateLimitService {
       remaining: Number(raw[1]),
       retryAfterSec: Number(raw[2]),
       resetAfterSec: Number(raw[3]),
+      blocked: Number(raw[4]) === 1,
+      blockRemainingSec: Number(raw[5]),
     };
+  }
+
+  async setTempBlock(subject: string, identifier: string, ttlSec: number) {
+    await redis.set(buildTempBlockKey(subject, identifier), "1", "EX", ttlSec);
+  }
+
+  async getTempBlockTtl(subject: string, identifier: string) {
+    const ttl = await redis.ttl(buildTempBlockKey(subject, identifier));
+    return ttl > 0 ? ttl : 0;
   }
 }
 

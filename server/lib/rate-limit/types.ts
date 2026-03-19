@@ -1,15 +1,19 @@
-export type RateLimitScope = "apiKey";
+export type RateLimitScope = "apiKey" | "merchant" | "ip";
 
 export type RouteGroup =
   | "payments:create"
   | "payments:read"
-  | "apiKeys:manage";
+  | "apiKeys:manage"
+  | "auth:malformed"
+  | "auth:unknown"
+  | "auth:failed";
 
 export interface TokenBucketPolicy {
   capacity: number;
   refillRatePerSec: number;
   cost?: number;
   ttlSec?: number;
+  blockDurationSec?: number;
 }
 
 export interface ResolvedRateLimitPolicy {
@@ -20,6 +24,7 @@ export interface ResolvedRateLimitPolicy {
   refillRatePerSec: number;
   cost: number;
   ttlSec: number;
+  blockDurationSec: number;
 }
 
 export interface RateLimitDecision {
@@ -27,4 +32,6 @@ export interface RateLimitDecision {
   remaining: number;
   retryAfterSec: number;
   resetAfterSec: number;
+  blocked: boolean;
+  blockRemainingSec: number;
 }

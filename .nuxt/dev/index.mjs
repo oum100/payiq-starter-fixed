@@ -1,5 +1,5 @@
 import process from 'node:process';globalThis._importMeta_={url:import.meta.url,env:process.env};import { tmpdir } from 'node:os';
-import { defineEventHandler, handleCacheHeaders, splitCookiesString, createEvent, fetchWithEvent, isEvent, eventHandler, setHeaders, sendRedirect, proxyRequest, getRequestHeader, setResponseHeaders, setResponseStatus, send, getRequestHeaders, setResponseHeader, appendResponseHeader, getRequestURL, getResponseHeader, removeResponseHeader, createError, getHeader, getQuery as getQuery$1, readBody, createApp, createRouter as createRouter$1, toNodeListener, lazyEventHandler, getResponseStatus, getRouterParam, readRawBody, getHeaders, getResponseStatusText } from 'file:///Users/teerin/Documents/MyDev/Nuxt4/payiq-starter-fixed/node_modules/h3/dist/index.mjs';
+import { defineEventHandler, handleCacheHeaders, splitCookiesString, createEvent, fetchWithEvent, isEvent, eventHandler, setHeaders, sendRedirect, proxyRequest, getRequestHeader, setResponseHeaders, setResponseStatus, send, getRequestHeaders, setResponseHeader, appendResponseHeader, getRequestURL, getResponseHeader, removeResponseHeader, createError, getHeader, getRequestIP, getQuery as getQuery$1, readBody, createApp, createRouter as createRouter$1, toNodeListener, lazyEventHandler, getResponseStatus, getRouterParam, readRawBody, getHeaders, getResponseStatusText } from 'file:///Users/teerin/Documents/MyDev/Nuxt4/payiq-starter-fixed/node_modules/h3/dist/index.mjs';
 import { Server } from 'node:http';
 import { resolve, dirname, join } from 'node:path';
 import nodeCrypto, { randomBytes, createHash, timingSafeEqual, createHmac } from 'node:crypto';
@@ -7,7 +7,7 @@ import { parentPort, threadId } from 'node:worker_threads';
 import { escapeHtml } from 'file:///Users/teerin/Documents/MyDev/Nuxt4/payiq-starter-fixed/node_modules/@vue/shared/dist/shared.cjs.js';
 import { z } from 'file:///Users/teerin/Documents/MyDev/Nuxt4/payiq-starter-fixed/node_modules/zod/index.js';
 import { nanoid } from 'file:///Users/teerin/Documents/MyDev/Nuxt4/payiq-starter-fixed/node_modules/nanoid/index.js';
-import { PrismaClient } from 'file:///Users/teerin/Documents/MyDev/Nuxt4/payiq-starter-fixed/node_modules/@prisma/client/default.js';
+import { PrismaClient, Prisma } from 'file:///Users/teerin/Documents/MyDev/Nuxt4/payiq-starter-fixed/node_modules/@prisma/client/default.js';
 import { Queue } from 'file:///Users/teerin/Documents/MyDev/Nuxt4/payiq-starter-fixed/node_modules/bullmq/dist/cjs/index.js';
 import { createRenderer, getRequestDependencies, getPreloadLinks, getPrefetchLinks } from 'file:///Users/teerin/Documents/MyDev/Nuxt4/payiq-starter-fixed/node_modules/vue-bundle-renderer/dist/runtime.mjs';
 import { parseURL, withoutBase, joinURL, getQuery, withQuery, withTrailingSlash, decodePath, withLeadingSlash, withoutTrailingSlash, joinRelativeURL } from 'file:///Users/teerin/Documents/MyDev/Nuxt4/payiq-starter-fixed/node_modules/ufo/dist/index.mjs';
@@ -2152,22 +2152,7 @@ _eseZhqReVR4kuQoTcHxmE8SKXG4ufZRCkuu32o4Fs,
 _wH6JrtIxmaSoA8lCPWFnE9z4lQeXW6H5z3l5aymEQw
 ];
 
-const assets = {
-  "/index.mjs": {
-    "type": "text/javascript; charset=utf-8",
-    "etag": "\"241cf-oVoeZ1bwGlAn2U0WAz0NcCFPxXk\"",
-    "mtime": "2026-03-19T12:47:08.429Z",
-    "size": 147919,
-    "path": "index.mjs"
-  },
-  "/index.mjs.map": {
-    "type": "application/json",
-    "etag": "\"8fa66-jxdhatSXU3+DAcjqx1+5A0CbtjQ\"",
-    "mtime": "2026-03-19T12:47:08.429Z",
-    "size": 588390,
-    "path": "index.mjs.map"
-  }
-};
+const assets = {};
 
 function readAsset (id) {
   const serverDir = dirname$1(fileURLToPath(globalThis._importMeta_.url));
@@ -2256,69 +2241,140 @@ const _fKbPNG = eventHandler((event) => {
   return readAsset(id);
 });
 
-const ROUTE_LIMITS = {
-  "payments:create": {
-    capacity: 20,
-    refillRatePerSec: 2,
-    cost: 1,
-    ttlSec: 300
-  },
-  "payments:read": {
-    capacity: 120,
-    refillRatePerSec: 30,
-    cost: 1,
-    ttlSec: 120
-  },
-  "apiKeys:manage": {
-    capacity: 10,
-    refillRatePerSec: 0.2,
-    cost: 1,
-    ttlSec: 3600
-  }
-};
-
-function detectRouteGroup(event) {
-  const method = event.method.toUpperCase();
-  const path = event.path;
-  if (method === "POST" && path.startsWith("/api/v1/payment-intents")) {
-    return "payments:create";
-  }
-  if (method === "GET" && path.startsWith("/api/v1/payment-intents/")) {
-    return "payments:read";
-  }
-  if (path.startsWith("/api/v1/api-keys")) {
-    return "apiKeys:manage";
-  }
-  return null;
-}
-function resolveRateLimitPolicy(event, input) {
-  var _a, _b;
-  const routeGroup = detectRouteGroup(event);
-  if (!routeGroup) return [];
-  const base = ROUTE_LIMITS[routeGroup];
-  return [
-    {
-      scope: "apiKey",
-      identifier: input.apiKeyPrefix,
-      routeGroup,
-      capacity: base.capacity,
-      refillRatePerSec: base.refillRatePerSec,
-      cost: (_a = base.cost) != null ? _a : 1,
-      ttlSec: (_b = base.ttlSec) != null ? _b : 300
-    }
-  ];
-}
-
 var _a$1;
+const globalForPrisma = globalThis;
+const prisma = (_a$1 = globalForPrisma.prisma) != null ? _a$1 : new PrismaClient({
+  log: ["warn", "error"]
+});
+globalForPrisma.prisma = prisma;
+
+var __defProp = Object.defineProperty;
+var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
+var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
+class AppError extends Error {
+  constructor(code, message, statusCode = 400, details) {
+    super(message);
+    __publicField(this, "statusCode");
+    __publicField(this, "code");
+    __publicField(this, "details");
+    this.code = code;
+    this.statusCode = statusCode;
+    this.details = details;
+  }
+}
+
+function generateApiKeySecret(bytes = 24) {
+  return randomBytes(bytes).toString("base64url");
+}
+function hashApiKeySecret(secret) {
+  return createHash("sha256").update(secret).digest("hex");
+}
+function verifyApiKeySecret(secret, secretHash) {
+  const hashed = hashApiKeySecret(secret);
+  const a = Buffer.from(hashed);
+  const b = Buffer.from(secretHash);
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
+}
+function generateKeyPrefix(environment = "test") {
+  const rand = randomBytes(6).toString("hex");
+  return environment === "live" ? `pk_live_${rand}` : `pk_test_${rand}`;
+}
+function buildFullApiKey(keyPrefix, secret) {
+  return `${keyPrefix}.${secret}`;
+}
+function splitFullApiKey(fullKey) {
+  const parts = fullKey.split(".");
+  if (parts.length !== 2) return null;
+  const [keyPrefix, secret] = parts;
+  if (!keyPrefix || !secret) return null;
+  return { keyPrefix, secret };
+}
+
+async function resolveApiKey(fullApiKey) {
+  var _a, _b;
+  if (!fullApiKey) {
+    throw new AppError("UNAUTHORIZED", "Missing API key", 401);
+  }
+  const parsed = splitFullApiKey(fullApiKey);
+  if (!parsed) {
+    throw new AppError("UNAUTHORIZED", "Malformed API key", 401);
+  }
+  const record = await prisma.apiKey.findFirst({
+    where: {
+      keyPrefix: parsed.keyPrefix,
+      status: "ACTIVE",
+      revokedAt: null
+    },
+    include: {
+      tenant: true,
+      merchantAccount: true
+    }
+  });
+  if (!record) {
+    throw new AppError("UNAUTHORIZED", "Invalid API key", 401);
+  }
+  const valid = verifyApiKeySecret(parsed.secret, record.secretHash);
+  if (!valid) {
+    throw new AppError("UNAUTHORIZED", "Invalid API key", 401);
+  }
+  if (record.expiresAt && record.expiresAt.getTime() < Date.now()) {
+    throw new AppError("UNAUTHORIZED", "API key expired", 401);
+  }
+  if (record.tenant.status !== "ACTIVE") {
+    throw new AppError("FORBIDDEN", "Tenant is inactive", 403);
+  }
+  if (record.merchantAccountId && ((_a = record.merchantAccount) == null ? void 0 : _a.status) !== "ACTIVE") {
+    throw new AppError("FORBIDDEN", "Merchant is inactive", 403);
+  }
+  await prisma.apiKey.update({
+    where: { id: record.id },
+    data: { lastUsedAt: /* @__PURE__ */ new Date() }
+  });
+  return {
+    apiKeyId: record.id,
+    tenantId: record.tenantId,
+    tenantCode: record.tenant.code,
+    merchantAccountId: record.merchantAccountId || null,
+    merchantCode: ((_b = record.merchantAccount) == null ? void 0 : _b.code) || null,
+    scopes: record.scopes
+  };
+}
+
+async function requireApiKeyAuth(event) {
+  var _a;
+  const apiKey = getHeader(event, "x-api-key") || ((_a = getHeader(event, "authorization")) == null ? void 0 : _a.replace(/^Bearer\s+/i, "")) || "";
+  const auth = await resolveApiKey(apiKey);
+  event.context.auth = auth;
+  return auth;
+}
+
+function sha256$1(input) {
+  return createHash("sha256").update(input).digest("hex");
+}
+function getClientIp(event) {
+  return getRequestIP(event, { xForwardedFor: true }) || "unknown";
+}
+function getClientIpHash(event) {
+  return sha256$1(getClientIp(event));
+}
+
+var _a;
 const globalForRedis = globalThis;
-const redis = (_a$1 = globalForRedis.redis) != null ? _a$1 : new IORedis(process.env.REDIS_URL || "redis://localhost:6379", {
+const redis = (_a = globalForRedis.redis) != null ? _a : new IORedis(process.env.REDIS_URL || "redis://localhost:6379", {
   maxRetriesPerRequest: null,
   enableReadyCheck: true
 });
 globalForRedis.redis = redis;
 
 function buildRateLimitKey(scope, identifier, routeGroup) {
-  return `rl:tb:v1:${scope}:${identifier}:${routeGroup}`;
+  return `rl:tb:v2:${scope}:${identifier}:${routeGroup}`;
+}
+function buildPaymentSpamKey(...parts) {
+  return `abuse:pay:v1:${parts.join(":")}`;
+}
+function buildTempBlockKey(subject, identifier) {
+  return `block:v1:${subject}:${identifier}`;
 }
 
 const TOKEN_BUCKET_LUA = `
@@ -2329,11 +2385,17 @@ local capacity = tonumber(ARGV[2])
 local refillRatePerSec = tonumber(ARGV[3])
 local cost = tonumber(ARGV[4])
 local ttlSec = tonumber(ARGV[5])
+local blockDurationSec = tonumber(ARGV[6])
 
-local data = redis.call("HMGET", key, "tokens", "ts")
-
+local data = redis.call("HMGET", key, "tokens", "ts", "blockedUntil")
 local tokens = tonumber(data[1])
 local ts = tonumber(data[2])
+local blockedUntil = tonumber(data[3])
+
+if blockedUntil ~= nil and blockedUntil > nowMs then
+  local retryAfterSec = math.ceil((blockedUntil - nowMs) / 1000)
+  return {0, math.floor(tokens or 0), retryAfterSec, retryAfterSec, 1, retryAfterSec}
+end
 
 if tokens == nil then
   tokens = capacity
@@ -2353,24 +2415,40 @@ end
 local allowed = 0
 local retryAfterSec = 0
 local resetAfterSec = 0
+local blocked = 0
+local blockRemainingSec = 0
 
 if tokens >= cost then
   tokens = tokens - cost
   allowed = 1
 else
   local needed = cost - tokens
+
   if refillRatePerSec > 0 then
     retryAfterSec = math.ceil(needed / refillRatePerSec)
+    resetAfterSec = math.ceil((capacity - tokens) / refillRatePerSec)
   else
     retryAfterSec = ttlSec
+    resetAfterSec = ttlSec
+  end
+
+  if blockDurationSec > 0 then
+    local blockedUntilMs = nowMs + (blockDurationSec * 1000)
+    redis.call("HSET", key, "blockedUntil", blockedUntilMs)
+    blocked = 1
+    blockRemainingSec = blockDurationSec
+    retryAfterSec = math.max(retryAfterSec, blockDurationSec)
+    resetAfterSec = math.max(resetAfterSec, blockDurationSec)
   end
 end
 
-local missing = capacity - tokens
-if refillRatePerSec > 0 then
-  resetAfterSec = math.ceil(missing / refillRatePerSec)
-else
-  resetAfterSec = ttlSec
+if allowed == 1 then
+  local missing = capacity - tokens
+  if refillRatePerSec > 0 then
+    resetAfterSec = math.ceil(missing / refillRatePerSec)
+  else
+    resetAfterSec = ttlSec
+  end
 end
 
 redis.call("HSET", key, "tokens", tokens, "ts", ts)
@@ -2380,7 +2458,9 @@ return {
   allowed,
   math.floor(tokens),
   retryAfterSec,
-  resetAfterSec
+  resetAfterSec,
+  blocked,
+  blockRemainingSec
 }
 `;
 
@@ -2409,7 +2489,8 @@ class RateLimitService {
         policy.capacity,
         policy.refillRatePerSec,
         policy.cost,
-        policy.ttlSec
+        policy.ttlSec,
+        policy.blockDurationSec
       );
     } catch {
       raw = await redis.eval(
@@ -2420,51 +2501,242 @@ class RateLimitService {
         policy.capacity,
         policy.refillRatePerSec,
         policy.cost,
-        policy.ttlSec
+        policy.ttlSec,
+        policy.blockDurationSec
       );
     }
     return {
       allowed: Number(raw[0]) === 1,
       remaining: Number(raw[1]),
       retryAfterSec: Number(raw[2]),
-      resetAfterSec: Number(raw[3])
+      resetAfterSec: Number(raw[3]),
+      blocked: Number(raw[4]) === 1,
+      blockRemainingSec: Number(raw[5])
     };
+  }
+  async setTempBlock(subject, identifier, ttlSec) {
+    await redis.set(buildTempBlockKey(subject, identifier), "1", "EX", ttlSec);
+  }
+  async getTempBlockTtl(subject, identifier) {
+    const ttl = await redis.ttl(buildTempBlockKey(subject, identifier));
+    return ttl > 0 ? ttl : 0;
   }
 }
 const rateLimitService = new RateLimitService();
 
-function extractApiKeyPrefix(rawApiKey) {
-  if (!rawApiKey) return null;
-  const parts = rawApiKey.split(".");
-  if (parts.length !== 2) return null;
-  const [prefix, secret] = parts;
-  if (!prefix || !secret) return null;
-  return prefix;
+const ROUTE_LIMITS = {
+  "payments:create": {
+    capacity: 20,
+    refillRatePerSec: 5,
+    cost: 1,
+    ttlSec: 300,
+    blockDurationSec: 2
+  },
+  "payments:read": {
+    capacity: 120,
+    refillRatePerSec: 30,
+    cost: 1,
+    ttlSec: 120,
+    blockDurationSec: 0
+  },
+  "apiKeys:manage": {
+    capacity: 10,
+    refillRatePerSec: 0.2,
+    cost: 1,
+    ttlSec: 3600,
+    blockDurationSec: 30
+  },
+  "auth:malformed": {
+    capacity: 8,
+    refillRatePerSec: 0.2,
+    cost: 1,
+    ttlSec: 3600,
+    blockDurationSec: 300
+  },
+  "auth:unknown": {
+    capacity: 12,
+    refillRatePerSec: 0.25,
+    cost: 1,
+    ttlSec: 3600,
+    blockDurationSec: 300
+  },
+  "auth:failed": {
+    capacity: 10,
+    refillRatePerSec: 0.2,
+    cost: 1,
+    ttlSec: 3600,
+    blockDurationSec: 300
+  }
+};
+const MERCHANT_LIMITS = {
+  "payments:create": {
+    capacity: 60,
+    refillRatePerSec: 10,
+    cost: 1,
+    ttlSec: 300,
+    blockDurationSec: 3
+  }
+};
+const PAYMENT_SPAM_LIMITS = {
+  duplicateReference: {
+    ttlSec: 30,
+    threshold: 10,
+    blockSec: 30
+  },
+  amountVelocity: {
+    ttlSec: 10,
+    threshold: 25,
+    blockSec: 15
+  }
+};
+
+function isProtectedPath(path) {
+  if (path === "/api/v1/health") return false;
+  return path.startsWith("/api/v1/");
 }
+function buildAuthPolicy(routeGroup, ipHash) {
+  var _a, _b, _c;
+  const base = ROUTE_LIMITS[routeGroup];
+  return {
+    scope: "ip",
+    identifier: ipHash,
+    routeGroup,
+    capacity: base.capacity,
+    refillRatePerSec: base.refillRatePerSec,
+    cost: (_a = base.cost) != null ? _a : 1,
+    ttlSec: (_b = base.ttlSec) != null ? _b : 3600,
+    blockDurationSec: (_c = base.blockDurationSec) != null ? _c : 0
+  };
+}
+async function denyWithAbuseControl(event, routeGroup, message) {
+  const ipHash = getClientIpHash(event);
+  const decision = await rateLimitService.check(buildAuthPolicy(routeGroup, ipHash));
+  if (!decision.allowed) {
+    setResponseHeader(event, "Retry-After", String(decision.retryAfterSec));
+    throw createError({
+      statusCode: 429,
+      statusMessage: "Too Many Requests",
+      data: {
+        code: "AUTH_RATE_LIMITED",
+        routeGroup,
+        retryAfterSec: decision.retryAfterSec
+      }
+    });
+  }
+  throw createError({
+    statusCode: 401,
+    statusMessage: "Unauthorized",
+    data: {
+      code: message
+    }
+  });
+}
+const _MUo9ZW = defineEventHandler(async (event) => {
+  if (!isProtectedPath(event.path)) return;
+  try {
+    await requireApiKeyAuth(event);
+  } catch (error) {
+    const message = String((error == null ? void 0 : error.message) || "");
+    if (message.includes("Malformed API key")) {
+      await denyWithAbuseControl(event, "auth:malformed", "MALFORMED_API_KEY");
+    }
+    if (message.includes("Invalid API key prefix") || message.includes("API key not found") || message.includes("Unknown API key")) {
+      await denyWithAbuseControl(event, "auth:unknown", "INVALID_API_KEY");
+    }
+    if (message.includes("Invalid API key secret") || message.includes("Invalid API key") || message.includes("Unauthorized")) {
+      await denyWithAbuseControl(event, "auth:failed", "INVALID_API_KEY");
+    }
+    throw error;
+  }
+});
+
+function detectRouteGroup(event) {
+  const method = event.method.toUpperCase();
+  const path = event.path;
+  if (method === "POST" && path.startsWith("/api/v1/payment-intents")) {
+    return "payments:create";
+  }
+  if (method === "GET" && path.startsWith("/api/v1/payment-intents/")) {
+    return "payments:read";
+  }
+  if (path.startsWith("/api/v1/api-keys")) {
+    return "apiKeys:manage";
+  }
+  return null;
+}
+function resolveRateLimitPolicies(event, input) {
+  var _a, _b, _c;
+  const routeGroup = detectRouteGroup(event);
+  if (!routeGroup) return [];
+  const base = ROUTE_LIMITS[routeGroup];
+  const policies = [
+    {
+      scope: "apiKey",
+      identifier: input.apiKeyId,
+      routeGroup,
+      capacity: base.capacity,
+      refillRatePerSec: base.refillRatePerSec,
+      cost: (_a = base.cost) != null ? _a : 1,
+      ttlSec: (_b = base.ttlSec) != null ? _b : 300,
+      blockDurationSec: (_c = base.blockDurationSec) != null ? _c : 0
+    }
+  ];
+  if (routeGroup === "payments:create" && input.merchantAccountId && MERCHANT_LIMITS["payments:create"]) {
+    const merchantBase = MERCHANT_LIMITS["payments:create"];
+    policies.push({
+      scope: "merchant",
+      identifier: input.merchantAccountId,
+      routeGroup,
+      capacity: merchantBase.capacity,
+      refillRatePerSec: merchantBase.refillRatePerSec,
+      cost: merchantBase.cost,
+      ttlSec: merchantBase.ttlSec,
+      blockDurationSec: merchantBase.blockDurationSec
+    });
+  }
+  return policies;
+}
+
 const _LujxJG = defineEventHandler(async (event) => {
-  const rawApiKey = getHeader(event, "x-api-key");
-  const apiKeyPrefix = extractApiKeyPrefix(rawApiKey);
-  if (!apiKeyPrefix) {
-    return;
-  }
-  const policies = resolveRateLimitPolicy(event, { apiKeyPrefix });
-  if (!policies.length) {
-    return;
-  }
-  let minRemaining = Number.MAX_SAFE_INTEGER;
-  let maxReset = 0;
-  let appliedLimit = 0;
+  const auth = event.context.auth;
+  if (!auth) return;
+  const policies = resolveRateLimitPolicies(event, {
+    apiKeyId: auth.apiKeyId,
+    merchantAccountId: auth.merchantAccountId
+  });
+  if (!policies.length) return;
+  let apiKeyLimit = 0;
+  let apiKeyRemaining = Number.MAX_SAFE_INTEGER;
+  let apiKeyReset = 0;
   for (const policy of policies) {
     const decision = await rateLimitService.check(policy);
+    if (policy.scope === "apiKey") {
+      apiKeyLimit = policy.capacity;
+      apiKeyRemaining = Math.min(apiKeyRemaining, decision.remaining);
+      apiKeyReset = Math.max(apiKeyReset, decision.resetAfterSec);
+    }
     if (!decision.allowed) {
+      if (apiKeyLimit > 0) {
+        setResponseHeader(event, "X-RateLimit-Limit", String(apiKeyLimit));
+        setResponseHeader(
+          event,
+          "X-RateLimit-Remaining",
+          policy.scope === "apiKey" ? "0" : String(Math.max(0, apiKeyRemaining))
+        );
+        setResponseHeader(
+          event,
+          "X-RateLimit-Reset",
+          String(Math.max(apiKeyReset, decision.resetAfterSec))
+        );
+      }
       setResponseHeader(event, "Retry-After", decision.retryAfterSec);
-      setResponseHeader(event, "X-RateLimit-Limit", String(policy.capacity));
-      setResponseHeader(event, "X-RateLimit-Remaining", "0");
-      setResponseHeader(
-        event,
-        "X-RateLimit-Reset",
-        String(decision.resetAfterSec)
-      );
+      console.warn("[rate-limit-deny]", {
+        apiKeyId: auth.apiKeyId,
+        merchantAccountId: auth.merchantAccountId,
+        routeGroup: policy.routeGroup,
+        scope: policy.scope,
+        retryAfterSec: decision.retryAfterSec
+      });
       throw createError({
         statusCode: 429,
         statusMessage: "Too Many Requests",
@@ -2476,14 +2748,11 @@ const _LujxJG = defineEventHandler(async (event) => {
         }
       });
     }
-    minRemaining = Math.min(minRemaining, decision.remaining);
-    maxReset = Math.max(maxReset, decision.resetAfterSec);
-    appliedLimit = Math.max(appliedLimit, policy.capacity);
   }
-  if (appliedLimit > 0) {
-    setResponseHeader(event, "X-RateLimit-Limit", String(appliedLimit));
-    setResponseHeader(event, "X-RateLimit-Remaining", String(minRemaining));
-    setResponseHeader(event, "X-RateLimit-Reset", String(maxReset));
+  if (apiKeyLimit > 0) {
+    setResponseHeader(event, "X-RateLimit-Limit", String(apiKeyLimit));
+    setResponseHeader(event, "X-RateLimit-Remaining", String(apiKeyRemaining));
+    setResponseHeader(event, "X-RateLimit-Reset", String(apiKeyReset));
   }
 });
 
@@ -2869,6 +3138,7 @@ const _lazy_SOhBIt = () => Promise.resolve().then(function () { return renderer;
 
 const handlers = [
   { route: '', handler: _fKbPNG, lazy: false, middleware: true, method: undefined },
+  { route: '', handler: _MUo9ZW, lazy: false, middleware: true, method: undefined },
   { route: '', handler: _LujxJG, lazy: false, middleware: true, method: undefined },
   { route: '/api/v1/api-keys/:id/revoke', handler: _lazy_2l_ilF, lazy: true, middleware: false, method: "post" },
   { route: '/api/v1/api-keys/:id/rotate', handler: _lazy_aPYBb1, lazy: true, middleware: false, method: "post" },
@@ -3219,114 +3489,6 @@ const styles$1 = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProperty({
   default: styles
 }, Symbol.toStringTag, { value: 'Module' }));
 
-var _a;
-const globalForPrisma = globalThis;
-const prisma = (_a = globalForPrisma.prisma) != null ? _a : new PrismaClient({
-  log: ["warn", "error"]
-});
-globalForPrisma.prisma = prisma;
-
-var __defProp = Object.defineProperty;
-var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
-var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
-class AppError extends Error {
-  constructor(code, message, statusCode = 400, details) {
-    super(message);
-    __publicField(this, "statusCode");
-    __publicField(this, "code");
-    __publicField(this, "details");
-    this.code = code;
-    this.statusCode = statusCode;
-    this.details = details;
-  }
-}
-
-function generateApiKeySecret(bytes = 24) {
-  return randomBytes(bytes).toString("base64url");
-}
-function hashApiKeySecret(secret) {
-  return createHash("sha256").update(secret).digest("hex");
-}
-function verifyApiKeySecret(secret, secretHash) {
-  const hashed = hashApiKeySecret(secret);
-  const a = Buffer.from(hashed);
-  const b = Buffer.from(secretHash);
-  if (a.length !== b.length) return false;
-  return timingSafeEqual(a, b);
-}
-function generateKeyPrefix(environment = "test") {
-  const rand = randomBytes(6).toString("hex");
-  return environment === "live" ? `pk_live_${rand}` : `pk_test_${rand}`;
-}
-function buildFullApiKey(keyPrefix, secret) {
-  return `${keyPrefix}.${secret}`;
-}
-function splitFullApiKey(fullKey) {
-  const parts = fullKey.split(".");
-  if (parts.length !== 2) return null;
-  const [keyPrefix, secret] = parts;
-  if (!keyPrefix || !secret) return null;
-  return { keyPrefix, secret };
-}
-
-async function resolveApiKey(fullApiKey) {
-  var _a, _b;
-  if (!fullApiKey) {
-    throw new AppError("UNAUTHORIZED", "Missing API key", 401);
-  }
-  const parsed = splitFullApiKey(fullApiKey);
-  if (!parsed) {
-    throw new AppError("UNAUTHORIZED", "Malformed API key", 401);
-  }
-  const record = await prisma.apiKey.findFirst({
-    where: {
-      keyPrefix: parsed.keyPrefix,
-      status: "ACTIVE",
-      revokedAt: null
-    },
-    include: {
-      tenant: true,
-      merchantAccount: true
-    }
-  });
-  if (!record) {
-    throw new AppError("UNAUTHORIZED", "Invalid API key", 401);
-  }
-  const valid = verifyApiKeySecret(parsed.secret, record.secretHash);
-  if (!valid) {
-    throw new AppError("UNAUTHORIZED", "Invalid API key", 401);
-  }
-  if (record.expiresAt && record.expiresAt.getTime() < Date.now()) {
-    throw new AppError("UNAUTHORIZED", "API key expired", 401);
-  }
-  if (record.tenant.status !== "ACTIVE") {
-    throw new AppError("FORBIDDEN", "Tenant is inactive", 403);
-  }
-  if (record.merchantAccountId && ((_a = record.merchantAccount) == null ? void 0 : _a.status) !== "ACTIVE") {
-    throw new AppError("FORBIDDEN", "Merchant is inactive", 403);
-  }
-  await prisma.apiKey.update({
-    where: { id: record.id },
-    data: { lastUsedAt: /* @__PURE__ */ new Date() }
-  });
-  return {
-    apiKeyId: record.id,
-    tenantId: record.tenantId,
-    tenantCode: record.tenant.code,
-    merchantAccountId: record.merchantAccountId || null,
-    merchantCode: ((_b = record.merchantAccount) == null ? void 0 : _b.code) || null,
-    scopes: record.scopes
-  };
-}
-
-async function requireApiKeyAuth(event) {
-  var _a;
-  const apiKey = getHeader(event, "x-api-key") || ((_a = getHeader(event, "authorization")) == null ? void 0 : _a.replace(/^Bearer\s+/i, "")) || "";
-  const auth = await resolveApiKey(apiKey);
-  event.context.auth = auth;
-  return auth;
-}
-
 function requireScope(auth, scope) {
   if (!auth.scopes.includes(scope) && !auth.scopes.includes("*")) {
     throw new AppError("FORBIDDEN", `Missing required scope: ${scope}`, 403);
@@ -3676,42 +3838,211 @@ async function resolvePaymentRoute(params) {
   return route;
 }
 
-function sha256(input) {
-  return createHash("sha256").update(input).digest("hex");
-}
-function hmacSha256(secret, payload) {
-  return createHmac("sha256", secret).update(payload).digest("hex");
-}
-function safeCompare(a, b) {
-  if (!a || !b) return false;
-  const ab = Buffer.from(a);
-  const bb = Buffer.from(b);
-  if (ab.length !== bb.length) return false;
-  return timingSafeEqual(ab, bb);
-}
-
-async function reserveIdempotency(params) {
-  var _a;
-  if (!params.key) return null;
-  const requestHash = sha256(JSON.stringify((_a = params.requestBody) != null ? _a : {}));
-  const existing = await prisma.idempotencyKey.findUnique({
-    where: { tenantId_key: { tenantId: params.tenantId, key: params.key } }
-  });
-  if (existing) {
-    if (existing.requestHash !== requestHash) {
-      throw new AppError("IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_PAYLOAD", "Idempotency key already used with different payload", 409);
-    }
-    return existing;
+const DEFAULT_TTL_MS = 24 * 60 * 60 * 1e3;
+const DEFAULT_LOCK_TIMEOUT_MS = 30 * 1e3;
+function canonicalize(value) {
+  if (value === null) return null;
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return value;
   }
-  return prisma.idempotencyKey.create({
+  if (Array.isArray(value)) {
+    return value.map(canonicalize);
+  }
+  if (typeof value === "object") {
+    const input = value;
+    const output = {};
+    for (const key of Object.keys(input).sort()) {
+      const v = input[key];
+      if (typeof v === "undefined") continue;
+      output[key] = canonicalize(v);
+    }
+    return output;
+  }
+  return String(value);
+}
+function hashRequestBody(body) {
+  const normalized = canonicalize(body);
+  const serialized = JSON.stringify(normalized);
+  return createHash("sha256").update(serialized).digest("hex");
+}
+function nowPlus(ms) {
+  return new Date(Date.now() + ms);
+}
+function getRetryAfterSeconds(lockedAt, lockTimeoutMs) {
+  const remainingMs = lockedAt.getTime() + lockTimeoutMs - Date.now();
+  return Math.max(1, Math.ceil(remainingMs / 1e3));
+}
+function setIdempotencyStatus(event, status) {
+  if (!event) return;
+  setResponseHeader(event, "Idempotency-Status", status);
+}
+async function reserveIdempotency(input) {
+  var _a, _b;
+  if (!input.key) return null;
+  const ttlMs = (_a = input.ttlMs) != null ? _a : DEFAULT_TTL_MS;
+  const lockTimeoutMs = (_b = input.lockTimeoutMs) != null ? _b : DEFAULT_LOCK_TIMEOUT_MS;
+  const requestHash = hashRequestBody(input.requestBody);
+  while (true) {
+    const now = /* @__PURE__ */ new Date();
+    const existing = await prisma.idempotencyKey.findUnique({
+      where: {
+        tenantId_key: {
+          tenantId: input.tenantId,
+          key: input.key
+        }
+      }
+    });
+    if (!existing) {
+      try {
+        await prisma.idempotencyKey.create({
+          data: {
+            tenantId: input.tenantId,
+            key: input.key,
+            requestPath: input.requestPath,
+            requestMethod: input.requestMethod.toUpperCase(),
+            requestHash,
+            lockedAt: now,
+            completedAt: null,
+            responseStatusCode: null,
+            responseBody: Prisma.JsonNull,
+            resourceType: null,
+            resourceId: null,
+            expiresAt: nowPlus(ttlMs)
+          }
+        });
+        setIdempotencyStatus(input.event, "created");
+        return {
+          key: input.key,
+          requestHash,
+          status: "STARTED"
+        };
+      } catch (error) {
+        if ((error == null ? void 0 : error.code) === "P2002") {
+          continue;
+        }
+        throw error;
+      }
+    }
+    if (existing.expiresAt && existing.expiresAt.getTime() <= now.getTime()) {
+      const reclaimed = await prisma.idempotencyKey.updateMany({
+        where: {
+          tenantId: input.tenantId,
+          key: input.key,
+          updatedAt: existing.updatedAt
+        },
+        data: {
+          requestPath: input.requestPath,
+          requestMethod: input.requestMethod.toUpperCase(),
+          requestHash,
+          lockedAt: now,
+          completedAt: null,
+          responseStatusCode: null,
+          responseBody: Prisma.JsonNull,
+          resourceType: null,
+          resourceId: null,
+          expiresAt: nowPlus(ttlMs)
+        }
+      });
+      if (reclaimed.count === 1) {
+        setIdempotencyStatus(input.event, "created");
+        return {
+          key: input.key,
+          requestHash,
+          status: "STARTED"
+        };
+      }
+      continue;
+    }
+    if (existing.requestHash !== requestHash) {
+      setIdempotencyStatus(input.event, "conflict");
+      throw new AppError(
+        "IDEMPOTENCY_KEY_CONFLICT",
+        "Idempotency-Key was already used with a different request payload",
+        409
+      );
+    }
+    if (existing.completedAt) {
+      setIdempotencyStatus(input.event, "replay");
+      return {
+        key: existing.key,
+        requestHash: existing.requestHash,
+        status: "REPLAY",
+        responseStatusCode: existing.responseStatusCode,
+        responseBody: existing.responseBody,
+        resourceType: existing.resourceType,
+        resourceId: existing.resourceId
+      };
+    }
+    if (existing.lockedAt) {
+      const ageMs = now.getTime() - existing.lockedAt.getTime();
+      if (ageMs < lockTimeoutMs) {
+        setIdempotencyStatus(input.event, "in_progress");
+        throw new AppError(
+          "IDEMPOTENCY_IN_PROGRESS",
+          "A request with this Idempotency-Key is already in progress",
+          409,
+          {
+            retryAfterSec: getRetryAfterSeconds(
+              existing.lockedAt,
+              lockTimeoutMs
+            )
+          }
+        );
+      }
+    }
+    const claimed = await prisma.idempotencyKey.updateMany({
+      where: {
+        tenantId: input.tenantId,
+        key: input.key,
+        updatedAt: existing.updatedAt
+      },
+      data: {
+        lockedAt: now,
+        expiresAt: nowPlus(ttlMs)
+      }
+    });
+    if (claimed.count === 1) {
+      setIdempotencyStatus(input.event, "created");
+      return {
+        key: input.key,
+        requestHash,
+        status: "STARTED"
+      };
+    }
+  }
+}
+async function completeIdempotency(input) {
+  var _a, _b;
+  if (!input.key) return;
+  await prisma.idempotencyKey.update({
+    where: {
+      tenantId_key: {
+        tenantId: input.tenantId,
+        key: input.key
+      }
+    },
     data: {
-      tenantId: params.tenantId,
-      key: params.key,
-      requestPath: params.requestPath,
-      requestMethod: params.requestMethod,
-      requestHash,
-      lockedAt: /* @__PURE__ */ new Date(),
-      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1e3)
+      completedAt: /* @__PURE__ */ new Date(),
+      lockedAt: null,
+      expiresAt: nowPlus(DEFAULT_TTL_MS),
+      responseStatusCode: input.responseStatusCode,
+      responseBody: input.responseBody,
+      resourceType: (_a = input.resourceType) != null ? _a : null,
+      resourceId: (_b = input.resourceId) != null ? _b : null
+    }
+  });
+}
+async function releaseIdempotencyLock(input) {
+  if (!input.key) return;
+  await prisma.idempotencyKey.update({
+    where: {
+      tenantId_key: {
+        tenantId: input.tenantId,
+        key: input.key
+      }
+    },
+    data: {
+      lockedAt: null
     }
   });
 }
@@ -3851,8 +4182,21 @@ function getProviderAdapter(providerCode) {
   }
 }
 
+function toResponse(paymentIntent) {
+  var _a;
+  return {
+    publicId: paymentIntent.publicId,
+    status: paymentIntent.status,
+    amount: paymentIntent.amount.toString(),
+    currency: paymentIntent.currency,
+    qrPayload: paymentIntent.qrPayload,
+    deeplinkUrl: paymentIntent.deeplinkUrl,
+    redirectUrl: paymentIntent.redirectUrl,
+    expiresAt: ((_a = paymentIntent.expiresAt) == null ? void 0 : _a.toISOString()) || null
+  };
+}
 async function createPaymentIntent(auth, input, opts) {
-  var _a, _b, _c;
+  var _a, _b;
   if (!auth.merchantAccountId) {
     throw new AppError(
       "FORBIDDEN",
@@ -3882,181 +4226,309 @@ async function createPaymentIntent(auth, input, opts) {
     }
   }) : null;
   if (existingMerchantOrder) {
-    return {
-      publicId: existingMerchantOrder.publicId,
-      status: existingMerchantOrder.status,
-      amount: existingMerchantOrder.amount.toString(),
-      currency: existingMerchantOrder.currency,
-      qrPayload: existingMerchantOrder.qrPayload,
-      deeplinkUrl: existingMerchantOrder.deeplinkUrl,
-      redirectUrl: existingMerchantOrder.redirectUrl,
-      expiresAt: ((_a = existingMerchantOrder.expiresAt) == null ? void 0 : _a.toISOString()) || null
-    };
+    return toResponse(existingMerchantOrder);
   }
   const idem = await reserveIdempotency({
     tenantId: auth.tenantId,
     key: opts == null ? void 0 : opts.idempotencyKey,
     requestPath: "/api/v1/payment-intents",
     requestMethod: "POST",
-    requestBody: input
+    requestBody: input,
+    event: (_a = opts == null ? void 0 : opts.event) != null ? _a : void 0
   });
-  if ((idem == null ? void 0 : idem.resourceId) && idem.responseBody) {
+  if ((idem == null ? void 0 : idem.status) === "REPLAY" && idem.responseBody) {
     return idem.responseBody;
   }
-  const route = await resolvePaymentRoute({
-    tenantId: auth.tenantId,
-    paymentMethodType: "PROMPTPAY_QR",
-    currency: "THB"
-  });
-  const publicId = `piq_${nanoid(24)}`;
-  const callbackUrl = `${process.env.APP_BASE_URL}/api/v1/providers/scb/callback`;
-  const expiresAt = new Date(Date.now() + 15 * 60 * 1e3);
-  const created = await prisma.paymentIntent.create({
-    data: {
+  let created = null;
+  try {
+    const route = await resolvePaymentRoute({
       tenantId: auth.tenantId,
-      merchantAccountId: merchant.id,
-      paymentRouteId: route.id,
-      billerProfileId: route.billerProfile.id,
-      publicId,
-      merchantOrderId: input.merchantOrderId,
-      merchantReference: input.merchantReference,
-      idempotencyKeyValue: (opts == null ? void 0 : opts.idempotencyKey) || null,
       paymentMethodType: "PROMPTPAY_QR",
-      providerCode: route.providerCode,
-      currency: "THB",
-      amount: input.amount,
-      feeAmount: "0",
-      netAmount: input.amount,
-      status: "PENDING_PROVIDER",
-      customerName: input.customerName,
-      customerEmail: input.customerEmail,
-      customerPhone: input.customerPhone,
-      metadata: input.metadata,
-      expiresAt,
-      events: {
-        create: [
-          {
-            type: "PAYMENT_CREATED",
-            toStatus: "CREATED",
-            summary: "Payment intent created"
-          },
-          {
-            type: "ROUTE_RESOLVED",
-            fromStatus: "CREATED",
-            toStatus: "ROUTING",
-            summary: "Route resolved",
-            payload: {
-              routeId: route.id,
-              billerProfileId: route.billerProfile.id,
-              providerCode: route.providerCode
-            }
-          }
-        ]
-      }
-    }
-  });
-  const provider = getProviderAdapter(route.providerCode);
-  const providerResult = await provider.createPayment({
-    paymentIntentId: created.id,
-    publicId: created.publicId,
-    amount: created.amount.toString(),
-    currency: created.currency,
-    merchantOrderId: created.merchantOrderId,
-    expiresAt: ((_b = created.expiresAt) == null ? void 0 : _b.toISOString()) || null,
-    callbackUrl,
-    billerProfile: {
-      id: route.billerProfile.id,
-      providerCode: route.billerProfile.providerCode,
-      billerId: route.billerProfile.billerId,
-      credentialsEncrypted: route.billerProfile.credentialsEncrypted,
-      config: route.billerProfile.config
-    }
-  });
-  await prisma.providerAttempt.create({
-    data: {
-      paymentIntentId: created.id,
-      billerProfileId: route.billerProfile.id,
-      type: "CREATE_PAYMENT",
-      status: providerResult.success ? "SUCCEEDED" : "FAILED",
-      requestId: `req_${nanoid(20)}`,
-      providerCode: route.providerCode,
-      providerEndpoint: "create-payment",
-      httpMethod: "POST",
-      requestBody: providerResult.rawRequest,
-      responseBody: providerResult.rawResponse,
-      providerReference: providerResult.providerReference,
-      providerTxnId: providerResult.providerTransactionId,
-      errorCode: providerResult.errorCode,
-      errorMessage: providerResult.errorMessage,
-      sentAt: /* @__PURE__ */ new Date(),
-      completedAt: /* @__PURE__ */ new Date()
-    }
-  });
-  const updated = await prisma.paymentIntent.update({
-    where: { id: created.id },
-    data: providerResult.success ? {
-      status: "AWAITING_CUSTOMER",
-      providerReference: providerResult.providerReference,
-      providerTransactionId: providerResult.providerTransactionId,
-      qrPayload: providerResult.qrPayload,
-      deeplinkUrl: providerResult.deeplinkUrl,
-      redirectUrl: providerResult.redirectUrl,
-      events: {
-        create: [
-          {
-            type: "PROVIDER_ACCEPTED",
-            fromStatus: "PENDING_PROVIDER",
-            toStatus: "AWAITING_CUSTOMER",
-            summary: "Provider created payment successfully"
-          }
-        ]
-      }
-    } : {
-      status: "FAILED",
-      failedAt: /* @__PURE__ */ new Date(),
-      events: {
-        create: [
-          {
-            type: "PROVIDER_REJECTED",
-            fromStatus: "PENDING_PROVIDER",
-            toStatus: "FAILED",
-            summary: providerResult.errorMessage || "Provider rejected payment",
-            payload: {
-              errorCode: providerResult.errorCode
-            }
-          }
-        ]
-      }
-    }
-  });
-  const response = {
-    publicId: updated.publicId,
-    status: updated.status,
-    amount: updated.amount.toString(),
-    currency: updated.currency,
-    qrPayload: updated.qrPayload,
-    deeplinkUrl: updated.deeplinkUrl,
-    redirectUrl: updated.redirectUrl,
-    expiresAt: ((_c = updated.expiresAt) == null ? void 0 : _c.toISOString()) || null
-  };
-  if (idem) {
-    await prisma.idempotencyKey.update({
-      where: {
-        tenantId_key: {
-          tenantId: auth.tenantId,
-          key: idem.key
-        }
-      },
+      currency: "THB"
+    });
+    const publicId = `piq_${nanoid(24)}`;
+    const callbackUrl = `${process.env.APP_BASE_URL}/api/v1/providers/scb/callback`;
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1e3);
+    created = await prisma.paymentIntent.create({
       data: {
-        completedAt: /* @__PURE__ */ new Date(),
-        responseStatusCode: 200,
-        responseBody: response,
-        resourceType: "PaymentIntent",
-        resourceId: updated.id
+        tenantId: auth.tenantId,
+        merchantAccountId: merchant.id,
+        paymentRouteId: route.id,
+        billerProfileId: route.billerProfile.id,
+        publicId,
+        merchantOrderId: input.merchantOrderId,
+        merchantReference: input.merchantReference,
+        idempotencyKeyValue: (opts == null ? void 0 : opts.idempotencyKey) || null,
+        paymentMethodType: "PROMPTPAY_QR",
+        providerCode: route.providerCode,
+        currency: "THB",
+        amount: input.amount,
+        feeAmount: "0",
+        netAmount: input.amount,
+        status: "PENDING_PROVIDER",
+        customerName: input.customerName,
+        customerEmail: input.customerEmail,
+        customerPhone: input.customerPhone,
+        metadata: input.metadata,
+        expiresAt,
+        events: {
+          create: [
+            {
+              type: "PAYMENT_CREATED",
+              toStatus: "CREATED",
+              summary: "Payment intent created"
+            },
+            {
+              type: "ROUTE_RESOLVED",
+              fromStatus: "CREATED",
+              toStatus: "ROUTING",
+              summary: "Route resolved",
+              payload: {
+                routeId: route.id,
+                billerProfileId: route.billerProfile.id,
+                providerCode: route.providerCode
+              }
+            }
+          ]
+        }
+      }
+    });
+    const provider = getProviderAdapter(route.providerCode);
+    const providerResult = await provider.createPayment({
+      paymentIntentId: created.id,
+      publicId: created.publicId,
+      amount: created.amount.toString(),
+      currency: created.currency,
+      merchantOrderId: created.merchantOrderId,
+      expiresAt: ((_b = created.expiresAt) == null ? void 0 : _b.toISOString()) || null,
+      callbackUrl,
+      billerProfile: {
+        id: route.billerProfile.id,
+        providerCode: route.billerProfile.providerCode,
+        billerId: route.billerProfile.billerId,
+        credentialsEncrypted: route.billerProfile.credentialsEncrypted,
+        config: route.billerProfile.config
+      }
+    });
+    await prisma.providerAttempt.create({
+      data: {
+        paymentIntentId: created.id,
+        billerProfileId: route.billerProfile.id,
+        type: "CREATE_PAYMENT",
+        status: providerResult.success ? "SUCCEEDED" : "FAILED",
+        requestId: `req_${nanoid(20)}`,
+        providerCode: route.providerCode,
+        providerEndpoint: "create-payment",
+        httpMethod: "POST",
+        requestBody: providerResult.rawRequest,
+        responseBody: providerResult.rawResponse,
+        providerReference: providerResult.providerReference,
+        providerTxnId: providerResult.providerTransactionId,
+        errorCode: providerResult.errorCode,
+        errorMessage: providerResult.errorMessage,
+        sentAt: /* @__PURE__ */ new Date(),
+        completedAt: /* @__PURE__ */ new Date()
+      }
+    });
+    const updated = await prisma.paymentIntent.update({
+      where: { id: created.id },
+      data: providerResult.success ? {
+        status: "AWAITING_CUSTOMER",
+        providerReference: providerResult.providerReference,
+        providerTransactionId: providerResult.providerTransactionId,
+        qrPayload: providerResult.qrPayload,
+        deeplinkUrl: providerResult.deeplinkUrl,
+        redirectUrl: providerResult.redirectUrl,
+        events: {
+          create: [
+            {
+              type: "PROVIDER_ACCEPTED",
+              fromStatus: "PENDING_PROVIDER",
+              toStatus: "AWAITING_CUSTOMER",
+              summary: "Provider created payment successfully"
+            }
+          ]
+        }
+      } : {
+        status: "FAILED",
+        failedAt: /* @__PURE__ */ new Date(),
+        events: {
+          create: [
+            {
+              type: "PROVIDER_REJECTED",
+              fromStatus: "PENDING_PROVIDER",
+              toStatus: "FAILED",
+              summary: providerResult.errorMessage || "Provider rejected payment",
+              payload: {
+                errorCode: providerResult.errorCode
+              }
+            }
+          ]
+        }
+      }
+    });
+    const response = toResponse(updated);
+    await completeIdempotency({
+      tenantId: auth.tenantId,
+      key: opts == null ? void 0 : opts.idempotencyKey,
+      responseStatusCode: 200,
+      responseBody: response,
+      resourceType: "PaymentIntent",
+      resourceId: updated.id
+    });
+    return response;
+  } catch (error) {
+    if (created == null ? void 0 : created.id) {
+      try {
+        const failed = await prisma.paymentIntent.update({
+          where: { id: created.id },
+          data: {
+            status: "FAILED",
+            failedAt: /* @__PURE__ */ new Date(),
+            events: {
+              create: [
+                {
+                  type: "PAYMENT_INTERNAL_ERROR",
+                  fromStatus: "PENDING_PROVIDER",
+                  toStatus: "FAILED",
+                  summary: "Payment failed due to internal/provider exception",
+                  payload: {
+                    message: typeof (error == null ? void 0 : error.message) === "string" ? error.message.slice(0, 500) : "unknown"
+                  }
+                }
+              ]
+            }
+          }
+        });
+        const failureResponse = toResponse(failed);
+        await completeIdempotency({
+          tenantId: auth.tenantId,
+          key: opts == null ? void 0 : opts.idempotencyKey,
+          responseStatusCode: 200,
+          responseBody: failureResponse,
+          resourceType: "PaymentIntent",
+          resourceId: failed.id
+        });
+      } catch {
+      }
+    } else {
+      try {
+        await releaseIdempotencyLock({
+          tenantId: auth.tenantId,
+          key: opts == null ? void 0 : opts.idempotencyKey
+        });
+      } catch {
+      }
+    }
+    throw error;
+  }
+}
+
+async function checkPaymentSpamOrThrow(event, input) {
+  var _a, _b, _c, _d, _e;
+  const ipHash = getClientIpHash(event);
+  const blockedKey = buildTempBlockKey(
+    "payment-spam",
+    `${input.merchantAccountId}:${ipHash}`
+  );
+  const blockedTtl = await redis.ttl(blockedKey);
+  if (blockedTtl > 0) {
+    setResponseHeader(event, "Retry-After", blockedTtl);
+    throw createError({
+      statusCode: 429,
+      statusMessage: "Too Many Requests",
+      data: {
+        code: "PAYMENT_SPAM_BLOCKED",
+        retryAfterSec: blockedTtl
       }
     });
   }
-  return response;
+  const referenceHash = sha256$1(((_a = input.reference) == null ? void 0 : _a.trim()) || "no-ref");
+  const amountKey = `${input.amount}:${input.currency}`;
+  const duplicateRefKey = buildPaymentSpamKey(
+    "dupref",
+    input.merchantAccountId,
+    referenceHash,
+    amountKey
+  );
+  const velocityKey = buildPaymentSpamKey(
+    "velocity",
+    input.merchantAccountId,
+    ipHash,
+    amountKey
+  );
+  const multi = redis.multi();
+  multi.incr(duplicateRefKey);
+  multi.expire(
+    duplicateRefKey,
+    PAYMENT_SPAM_LIMITS.duplicateReference.ttlSec
+  );
+  multi.incr(velocityKey);
+  multi.expire(
+    velocityKey,
+    PAYMENT_SPAM_LIMITS.amountVelocity.ttlSec
+  );
+  const results = await multi.exec();
+  const duplicateCount = Number((_c = (_b = results == null ? void 0 : results[0]) == null ? void 0 : _b[1]) != null ? _c : 0);
+  const velocityCount = Number((_e = (_d = results == null ? void 0 : results[2]) == null ? void 0 : _d[1]) != null ? _e : 0);
+  if (duplicateCount > PAYMENT_SPAM_LIMITS.duplicateReference.threshold) {
+    await redis.set(
+      blockedKey,
+      "1",
+      "EX",
+      PAYMENT_SPAM_LIMITS.duplicateReference.blockSec
+    );
+    setResponseHeader(
+      event,
+      "Retry-After",
+      PAYMENT_SPAM_LIMITS.duplicateReference.blockSec
+    );
+    console.warn("[payment-spam]", {
+      type: "duplicate-reference",
+      merchantAccountId: input.merchantAccountId,
+      apiKeyId: input.apiKeyId,
+      duplicateCount,
+      amount: input.amount,
+      currency: input.currency
+    });
+    throw createError({
+      statusCode: 429,
+      statusMessage: "Too Many Requests",
+      data: {
+        code: "PAYMENT_SPAM_DUPLICATE_REFERENCE",
+        retryAfterSec: PAYMENT_SPAM_LIMITS.duplicateReference.blockSec
+      }
+    });
+  }
+  if (velocityCount > PAYMENT_SPAM_LIMITS.amountVelocity.threshold) {
+    await redis.set(
+      blockedKey,
+      "1",
+      "EX",
+      PAYMENT_SPAM_LIMITS.amountVelocity.blockSec
+    );
+    setResponseHeader(
+      event,
+      "Retry-After",
+      PAYMENT_SPAM_LIMITS.amountVelocity.blockSec
+    );
+    console.warn("[payment-spam]", {
+      type: "amount-velocity",
+      merchantAccountId: input.merchantAccountId,
+      apiKeyId: input.apiKeyId,
+      velocityCount,
+      amount: input.amount,
+      currency: input.currency
+    });
+    throw createError({
+      statusCode: 429,
+      statusMessage: "Too Many Requests",
+      data: {
+        code: "PAYMENT_SPAM_AMOUNT_VELOCITY",
+        retryAfterSec: PAYMENT_SPAM_LIMITS.amountVelocity.blockSec
+      }
+    });
+  }
 }
 
 const schema = z.object({
@@ -4070,23 +4542,66 @@ const schema = z.object({
   customerPhone: z.string().optional(),
   metadata: z.record(z.any()).optional()
 });
+function getApiKeyId(auth) {
+  var _a, _b, _c, _d;
+  return (_d = (_c = (_b = auth == null ? void 0 : auth.apiKeyId) != null ? _b : (_a = auth == null ? void 0 : auth.apiKey) == null ? void 0 : _a.id) != null ? _c : auth == null ? void 0 : auth.id) != null ? _d : null;
+}
+function getMerchantAccountId(auth) {
+  var _a, _b, _c, _d, _e;
+  return (_e = (_d = (_b = auth == null ? void 0 : auth.merchantAccountId) != null ? _b : (_a = auth == null ? void 0 : auth.merchantAccount) == null ? void 0 : _a.id) != null ? _d : (_c = auth == null ? void 0 : auth.apiKey) == null ? void 0 : _c.merchantAccountId) != null ? _e : null;
+}
 const index_post = defineEventHandler(async (event) => {
+  var _a, _b, _c, _d, _e;
   try {
-    const auth = await requireApiKeyAuth(event);
+    const auth = event.context.auth;
+    if (!auth) {
+      throw createError({
+        statusCode: 401,
+        statusMessage: "Unauthorized",
+        data: { code: "AUTH_CONTEXT_MISSING" }
+      });
+    }
     requireScope(auth, "payments:create");
     const body = schema.parse(await readBody(event));
     const idempotencyKey = getHeader(event, "idempotency-key");
+    const apiKeyId = getApiKeyId(auth);
+    const merchantAccountId = getMerchantAccountId(auth);
+    if (apiKeyId && merchantAccountId) {
+      await checkPaymentSpamOrThrow(event, {
+        merchantAccountId,
+        apiKeyId,
+        amount: body.amount,
+        currency: body.currency,
+        reference: (_c = (_b = (_a = body.merchantReference) != null ? _a : body.merchantOrderId) != null ? _b : idempotencyKey) != null ? _c : null
+      });
+    }
     const result = await createPaymentIntent(auth, body, {
-      idempotencyKey
+      idempotencyKey,
+      event
     });
     return result;
   } catch (error) {
     if (error instanceof AppError) {
+      if ((_d = error.details) == null ? void 0 : _d.retryAfterSec) {
+        setResponseHeader(
+          event,
+          "Retry-After",
+          String(error.details.retryAfterSec)
+        );
+      }
       setResponseStatus(event, error.statusCode);
       return {
         error: error.code,
         message: error.message,
         details: error.details
+      };
+    }
+    if (error == null ? void 0 : error.statusCode) {
+      setResponseStatus(event, error.statusCode);
+      return {
+        error: ((_e = error == null ? void 0 : error.data) == null ? void 0 : _e.code) || "REQUEST_ERROR",
+        message: (error == null ? void 0 : error.statusMessage) || (error == null ? void 0 : error.message) || "Request failed",
+        details: error == null ? void 0 : error.data
       };
     }
     setResponseStatus(event, 400);
@@ -4101,6 +4616,20 @@ const index_post$1 = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProper
   __proto__: null,
   default: index_post
 }, Symbol.toStringTag, { value: 'Module' }));
+
+function sha256(input) {
+  return createHash("sha256").update(input).digest("hex");
+}
+function hmacSha256(secret, payload) {
+  return createHmac("sha256", secret).update(payload).digest("hex");
+}
+function safeCompare(a, b) {
+  if (!a || !b) return false;
+  const ab = Buffer.from(a);
+  const bb = Buffer.from(b);
+  if (ab.length !== bb.length) return false;
+  return timingSafeEqual(ab, bb);
+}
 
 function buildScbCallbackSignature(secret, rawBody) {
   return hmacSha256(secret, rawBody);

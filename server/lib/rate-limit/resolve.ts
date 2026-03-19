@@ -1,5 +1,5 @@
 import type { H3Event } from "h3";
-import { ROUTE_LIMITS } from "./config";
+import { ROUTE_LIMITS, MERCHANT_LIMITS } from "./config";
 import type { ResolvedRateLimitPolicy, RouteGroup } from "./types";
 
 function detectRouteGroup(event: H3Event): RouteGroup | null {
@@ -21,10 +21,11 @@ function detectRouteGroup(event: H3Event): RouteGroup | null {
   return null;
 }
 
-export function resolveRateLimitPolicy(
+export function resolveRateLimitPolicies(
   event: H3Event,
   input: {
-    apiKeyPrefix: string;
+    apiKeyId: string;
+    merchantAccountId?: string | null;
   },
 ): ResolvedRateLimitPolicy[] {
   const routeGroup = detectRouteGroup(event);
@@ -32,15 +33,37 @@ export function resolveRateLimitPolicy(
 
   const base = ROUTE_LIMITS[routeGroup];
 
-  return [
+  const policies: ResolvedRateLimitPolicy[] = [
     {
       scope: "apiKey",
-      identifier: input.apiKeyPrefix,
+      identifier: input.apiKeyId,
       routeGroup,
       capacity: base.capacity,
       refillRatePerSec: base.refillRatePerSec,
       cost: base.cost ?? 1,
       ttlSec: base.ttlSec ?? 300,
+      blockDurationSec: base.blockDurationSec ?? 0,
     },
   ];
+
+  if (
+    routeGroup === "payments:create" &&
+    input.merchantAccountId &&
+    MERCHANT_LIMITS["payments:create"]
+  ) {
+    const merchantBase = MERCHANT_LIMITS["payments:create"];
+
+    policies.push({
+      scope: "merchant",
+      identifier: input.merchantAccountId,
+      routeGroup,
+      capacity: merchantBase.capacity,
+      refillRatePerSec: merchantBase.refillRatePerSec,
+      cost: merchantBase.cost,
+      ttlSec: merchantBase.ttlSec,
+      blockDurationSec: merchantBase.blockDurationSec,
+    });
+  }
+
+  return policies;
 }

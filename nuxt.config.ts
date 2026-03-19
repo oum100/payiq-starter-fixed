@@ -12,5 +12,10 @@ export default defineNuxtConfig({
     scbCallbackSecret: process.env.SCB_CALLBACK_SECRET,
 
     payiqWebhookSigningSecret: process.env.PAYIQ_WEBHOOK_SIGNING_SECRET
-  }
+  },
+    nitro: {
+    externals: {
+      inline: ["prom-client"],
+    },
+  },
 })

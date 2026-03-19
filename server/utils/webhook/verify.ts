@@ -1,11 +1,13 @@
-import crypto from "crypto";
+import crypto from "node:crypto";
 
-const TOLERANCE = 300; // seconds
+const TOLERANCE = Number(process.env.WEBHOOK_TIMESTAMP_TOLERANCE_SEC || 300);
 
 function timingSafeEqual(a: string, b: string) {
   const bufA = Buffer.from(a);
   const bufB = Buffer.from(b);
-  return bufA.length === bufB.length && crypto.timingSafeEqual(bufA, bufB);
+
+  if (bufA.length !== bufB.length) return false;
+  return crypto.timingSafeEqual(bufA, bufB);
 }
 
 export async function verifyWebhookSignature({
@@ -23,35 +25,41 @@ export async function verifyWebhookSignature({
     throw new Error("missing signature");
   }
 
-  const now = Math.floor(Date.now() / 1000);
   const ts = Number(timestamp);
+  if (!Number.isFinite(ts)) {
+    throw new Error("invalid timestamp");
+  }
 
+  const now = Math.floor(Date.now() / 1000);
   if (Math.abs(now - ts) > TOLERANCE) {
     throw new Error("timestamp out of tolerance");
   }
 
   const secrets = getSecrets(merchantId);
 
+  if (!secrets.length) {
+    throw new Error("webhook secret is not configured");
+  }
+
   const payload = `${timestamp}.${rawBody}`;
 
-  const valid = secrets.some((secret) => {
-    const hmac = crypto
+  const matched = secrets.some((secret) => {
+    const expected = crypto
       .createHmac("sha256", secret)
       .update(payload)
       .digest("hex");
 
-    return timingSafeEqual(hmac, signature);
+    return timingSafeEqual(expected, signature);
   });
 
-  if (!valid) {
+  if (!matched) {
     throw new Error("invalid signature");
   }
 }
 
-// 🔑 support rotation
-function getSecrets(merchantId?: string): string[] {
-  const global = process.env.WEBHOOK_SECRET?.split(",") || [];
-
-  // future: load per merchant secret from DB
-  return global;
+function getSecrets(_merchantId?: string): string[] {
+  return (process.env.WEBHOOK_SECRET || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
 }

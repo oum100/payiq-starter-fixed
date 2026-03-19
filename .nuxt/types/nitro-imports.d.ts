@@ -13,6 +13,7 @@ declare global {
   const cachedEventHandler: typeof import('../../node_modules/nitropack/dist/runtime/internal/cache').cachedEventHandler
   const cachedFunction: typeof import('../../node_modules/nitropack/dist/runtime/internal/cache').cachedFunction
   const callNodeListener: typeof import('../../node_modules/h3').callNodeListener
+  const checkIpAllowlist: typeof import('../../server/utils/webhook/ip-allowlist').checkIpAllowlist
   const clearResponseHeaders: typeof import('../../node_modules/h3').clearResponseHeaders
   const clearSession: typeof import('../../node_modules/h3').clearSession
   const createApp: typeof import('../../node_modules/h3').createApp
@@ -20,7 +21,10 @@ declare global {
   const createError: typeof import('../../node_modules/h3').createError
   const createEvent: typeof import('../../node_modules/h3').createEvent
   const createEventStream: typeof import('../../node_modules/h3').createEventStream
+  const createRedisConnection: typeof import('../../server/utils/queue/bullmq').createRedisConnection
   const createRouter: typeof import('../../node_modules/h3').createRouter
+  const createWebhookDLQ: typeof import('../../server/utils/queue/bullmq').createWebhookDLQ
+  const createWebhookQueue: typeof import('../../server/utils/queue/bullmq').createWebhookQueue
   const defaultContentType: typeof import('../../node_modules/h3').defaultContentType
   const defineAppConfig: typeof import('../../node_modules/@nuxt/nitro-server/dist/runtime/utils/config').defineAppConfig
   const defineCachedEventHandler: typeof import('../../node_modules/nitropack/dist/runtime/internal/cache').defineCachedEventHandler
@@ -40,6 +44,7 @@ declare global {
   const defineWebSocketHandler: typeof import('../../node_modules/h3').defineWebSocketHandler
   const deleteCookie: typeof import('../../node_modules/h3').deleteCookie
   const dynamicEventHandler: typeof import('../../node_modules/h3').dynamicEventHandler
+  const enqueueWebhookJob: typeof import('../../server/utils/queue/webhook.queue').enqueueWebhookJob
   const eventHandler: typeof import('../../node_modules/h3').eventHandler
   const fetchWithEvent: typeof import('../../node_modules/h3').fetchWithEvent
   const fromNodeMiddleware: typeof import('../../node_modules/h3').fromNodeMiddleware
@@ -73,6 +78,7 @@ declare global {
   const handleCacheHeaders: typeof import('../../node_modules/h3').handleCacheHeaders
   const handleCors: typeof import('../../node_modules/h3').handleCors
   const isCorsOriginAllowed: typeof import('../../node_modules/h3').isCorsOriginAllowed
+  const isDuplicateEvent: typeof import('../../server/utils/webhook/dedupe').isDuplicateEvent
   const isError: typeof import('../../node_modules/h3').isError
   const isEvent: typeof import('../../node_modules/h3').isEvent
   const isEventHandler: typeof import('../../node_modules/h3').isEventHandler
@@ -81,15 +87,20 @@ declare global {
   const isStream: typeof import('../../node_modules/h3').isStream
   const isWebResponse: typeof import('../../node_modules/h3').isWebResponse
   const lazyEventHandler: typeof import('../../node_modules/h3').lazyEventHandler
+  const logWebhook: typeof import('../../server/utils/webhook/logger').logWebhook
+  const markEventProcessed: typeof import('../../server/utils/webhook/dedupe').markEventProcessed
   const nitroPlugin: typeof import('../../node_modules/nitropack/dist/runtime/internal/plugin').nitroPlugin
   const parseCookies: typeof import('../../node_modules/h3').parseCookies
+  const processWebhook: typeof import('../../server/utils/queue/webhook.processor').processWebhook
   const promisifyNodeListener: typeof import('../../node_modules/h3').promisifyNodeListener
   const proxyRequest: typeof import('../../node_modules/h3').proxyRequest
+  const rateLimitWebhook: typeof import('../../server/utils/rate-limit').rateLimitWebhook
   const readBody: typeof import('../../node_modules/h3').readBody
   const readFormData: typeof import('../../node_modules/h3').readFormData
   const readMultipartFormData: typeof import('../../node_modules/h3').readMultipartFormData
   const readRawBody: typeof import('../../node_modules/h3').readRawBody
   const readValidatedBody: typeof import('../../node_modules/h3').readValidatedBody
+  const register: typeof import('../../server/utils/metrics/prometheus').register
   const removeResponseHeader: typeof import('../../node_modules/h3').removeResponseHeader
   const runTask: typeof import('../../node_modules/nitropack/dist/runtime/internal/task').runTask
   const sanitizeStatusCode: typeof import('../../node_modules/h3').sanitizeStatusCode
@@ -125,6 +136,11 @@ declare global {
   const useRuntimeConfig: typeof import('../../node_modules/nitropack/dist/runtime/internal/config').useRuntimeConfig
   const useSession: typeof import('../../node_modules/h3').useSession
   const useStorage: typeof import('../../node_modules/nitropack/dist/runtime/internal/storage').useStorage
+  const verifyWebhookSignature: typeof import('../../server/utils/webhook/verify').verifyWebhookSignature
+  const webhookDLQName: typeof import('../../server/utils/queue/bullmq').webhookDLQName
+  const webhookMetrics: typeof import('../../server/utils/metrics/prometheus').webhookMetrics
+  const webhookQueueName: typeof import('../../server/utils/queue/bullmq').webhookQueueName
+  const webhookWorker: typeof import('../../server/utils/queue/webhook.worker').webhookWorker
   const writeEarlyHints: typeof import('../../node_modules/h3').writeEarlyHints
 }
 // for type re-export
@@ -132,6 +148,9 @@ declare global {
   // @ts-ignore
   export type { EventHandler, EventHandlerRequest, EventHandlerResponse, EventHandlerObject, H3EventContext } from '../../node_modules/h3'
   import('../../node_modules/h3')
+  // @ts-ignore
+  export type { EnqueueWebhookJobInput } from '../../server/utils/queue/webhook.queue'
+  import('../../server/utils/queue/webhook.queue')
 }
 export { H3Event, H3Error, appendCorsHeaders, appendCorsPreflightHeaders, appendHeader, appendHeaders, appendResponseHeader, appendResponseHeaders, assertMethod, callNodeListener, clearResponseHeaders, clearSession, createApp, createAppEventHandler, createError, createEvent, createEventStream, createRouter, defaultContentType, defineEventHandler, defineLazyEventHandler, defineNodeListener, defineNodeMiddleware, defineRequestMiddleware, defineResponseMiddleware, defineWebSocket, defineWebSocketHandler, deleteCookie, dynamicEventHandler, eventHandler, fetchWithEvent, fromNodeMiddleware, fromPlainHandler, fromWebHandler, getCookie, getHeader, getHeaders, getMethod, getProxyRequestHeaders, getQuery, getRequestFingerprint, getRequestHeader, getRequestHeaders, getRequestHost, getRequestIP, getRequestPath, getRequestProtocol, getRequestURL, getRequestWebStream, getResponseHeader, getResponseHeaders, getResponseStatus, getResponseStatusText, getRouterParam, getRouterParams, getSession, getValidatedQuery, getValidatedRouterParams, handleCacheHeaders, handleCors, isCorsOriginAllowed, isError, isEvent, isEventHandler, isMethod, isPreflightRequest, isStream, isWebResponse, lazyEventHandler, parseCookies, promisifyNodeListener, proxyRequest, readBody, readFormData, readMultipartFormData, readRawBody, readValidatedBody, removeResponseHeader, sanitizeStatusCode, sanitizeStatusMessage, sealSession, send, sendError, sendIterable, sendNoContent, sendProxy, sendRedirect, sendStream, sendWebResponse, serveStatic, setCookie, setHeader, setHeaders, setResponseHeader, setResponseHeaders, setResponseStatus, splitCookiesString, toEventHandler, toNodeListener, toPlainHandler, toWebHandler, toWebRequest, unsealSession, updateSession, useBase, useSession, writeEarlyHints } from 'h3';
 export { useNitroApp } from 'nitropack/runtime/internal/app';
@@ -147,3 +166,13 @@ export { defineTask, runTask } from 'nitropack/runtime/internal/task';
 export { defineNitroErrorHandler } from 'nitropack/runtime/internal/error/utils';
 export { buildAssetsURL as __buildAssetsURL, publicAssetsURL as __publicAssetsURL } from '/Users/teerin/Documents/MyDev/Nuxt4/payiq-starter-fixed/node_modules/@nuxt/nitro-server/dist/runtime/utils/paths';
 export { defineAppConfig } from '/Users/teerin/Documents/MyDev/Nuxt4/payiq-starter-fixed/node_modules/@nuxt/nitro-server/dist/runtime/utils/config';
+export { webhookMetrics, register } from '/Users/teerin/Documents/MyDev/Nuxt4/payiq-starter-fixed/server/utils/metrics/prometheus';
+export { webhookQueueName, webhookDLQName, createRedisConnection, createWebhookQueue, createWebhookDLQ } from '/Users/teerin/Documents/MyDev/Nuxt4/payiq-starter-fixed/server/utils/queue/bullmq';
+export { processWebhook } from '/Users/teerin/Documents/MyDev/Nuxt4/payiq-starter-fixed/server/utils/queue/webhook.processor';
+export { enqueueWebhookJob } from '/Users/teerin/Documents/MyDev/Nuxt4/payiq-starter-fixed/server/utils/queue/webhook.queue';
+export { webhookWorker } from '/Users/teerin/Documents/MyDev/Nuxt4/payiq-starter-fixed/server/utils/queue/webhook.worker';
+export { rateLimitWebhook } from '/Users/teerin/Documents/MyDev/Nuxt4/payiq-starter-fixed/server/utils/rate-limit';
+export { isDuplicateEvent, markEventProcessed } from '/Users/teerin/Documents/MyDev/Nuxt4/payiq-starter-fixed/server/utils/webhook/dedupe';
+export { checkIpAllowlist } from '/Users/teerin/Documents/MyDev/Nuxt4/payiq-starter-fixed/server/utils/webhook/ip-allowlist';
+export { logWebhook } from '/Users/teerin/Documents/MyDev/Nuxt4/payiq-starter-fixed/server/utils/webhook/logger';
+export { verifyWebhookSignature } from '/Users/teerin/Documents/MyDev/Nuxt4/payiq-starter-fixed/server/utils/webhook/verify';

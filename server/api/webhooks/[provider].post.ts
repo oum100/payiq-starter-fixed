@@ -1,88 +1,121 @@
-import { readRawBody, getHeader, setResponseStatus } from "h3";
+import {
+  defineEventHandler,
+  getHeader,
+  readRawBody,
+  setResponseStatus,
+} from "h3";
+import { prisma } from "~/server/lib/prisma";
 import { verifyWebhookSignature } from "~/server/utils/webhook/verify";
-import { checkIpAllowlist } from "~/server/utils/webhook/ip-allowlist";
-import { rateLimitWebhook } from "~/server/utils/webhook/rate-limit";
-import { isDuplicateEvent, markEventProcessed } from "~/server/utils/webhook/dedupe";
-import { logWebhook } from "~/server/utils/webhook/logger";
-import { enqueueWebhookJob } from "~/server/utils/webhook/queue";
-import prisma from "~/server/utils/prisma";
+import { enqueueWebhookJob } from "~/server/utils/queue/webhook.queue";
+
+function getErrorMessage(error: unknown) {
+  if (error instanceof Error) return error.message;
+  return "unknown error";
+}
 
 export default defineEventHandler(async (event) => {
   const provider = event.context.params?.provider;
 
-  const rawBody = (await readRawBody(event)) || "";
-  const ip = event.node.req.socket.remoteAddress || "";
+  if (!provider) {
+    setResponseStatus(event, 400);
+    return { error: "missing provider" };
+  }
 
+  const rawBody = (await readRawBody(event, "utf8")) || "";
   const signature = getHeader(event, "x-payiq-signature") || "";
   const timestamp = getHeader(event, "x-payiq-timestamp") || "";
   const eventId = getHeader(event, "x-payiq-event-id") || "";
-  const merchantId = getHeader(event, "x-merchant-id") || "";
+  const merchantId = getHeader(event, "x-merchant-id") || null;
 
-  // 1) IP allowlist
-  checkIpAllowlist(ip);
+  if (!eventId) {
+    setResponseStatus(event, 400);
+    return { error: "missing event id" };
+  }
 
-  // 2) Rate limit
-  await rateLimitWebhook(`webhook:${provider}:${ip}`);
+  const existing = await prisma.webhookEvent.findUnique({
+    where: {
+      provider_eventId: {
+        provider,
+        eventId,
+      },
+    },
+    select: {
+      id: true,
+      status: true,
+    },
+  });
 
-  // 3) log RECEIVED
-  const webhookEvent = await prisma.webhookEvent.create({
+  if (existing) {
+    await prisma.webhookEvent.update({
+      where: { id: existing.id },
+      data: { status: "DUPLICATE" },
+    });
+
+    setResponseStatus(event, 200);
+    return { ok: true, duplicate: true };
+  }
+
+  const dbRecord = await prisma.webhookEvent.create({
     data: {
       provider,
       eventId,
       merchantId,
       payload: rawBody,
-      headers: {
+      status: "RECEIVED",
+      headersJson: {
         signature,
         timestamp,
+        merchantId,
       },
-      status: "RECEIVED",
+    },
+    select: {
+      id: true,
     },
   });
 
   try {
-    // 4) Verify signature
     await verifyWebhookSignature({
       rawBody,
       signature,
       timestamp,
-      merchantId,
+      merchantId: merchantId || undefined,
     });
 
-    // 5) Replay protection done in verify()
-
-    // 6) Duplicate check
-    if (await isDuplicateEvent(eventId)) {
-      await prisma.webhookEvent.update({
-        where: { id: webhookEvent.id },
-        data: { status: "DUPLICATE" },
-      });
-
-      return { ok: true };
-    }
-
-    // 7) mark VERIFIED
     await prisma.webhookEvent.update({
-      where: { id: webhookEvent.id },
-      data: { status: "VERIFIED" },
+      where: { id: dbRecord.id },
+      data: {
+        status: "VERIFIED",
+        verifiedAt: new Date(),
+      },
     });
 
-    // 8) enqueue async processing
     await enqueueWebhookJob({
       eventId,
       provider,
       rawBody,
-      merchantId,
+      merchantId: merchantId || undefined,
+      headers: {
+        "x-payiq-signature": signature,
+        "x-payiq-timestamp": timestamp,
+        "x-payiq-event-id": eventId,
+        "x-merchant-id": merchantId || undefined,
+      },
     });
 
-    // 9) fast ACK
+    setResponseStatus(event, 200);
     return { ok: true };
-  } catch (err: any) {
+  } catch (error) {
+    const message = getErrorMessage(error);
+
     await prisma.webhookEvent.update({
-      where: { id: webhookEvent.id },
-      data: { status: "FAILED", error: err.message },
+      where: { id: dbRecord.id },
+      data: {
+        status: "FAILED",
+        lastError: message,
+      },
     });
 
     setResponseStatus(event, 400);
-    return { error: "invalid webhook" };
+    return { error: message };
   }
 });

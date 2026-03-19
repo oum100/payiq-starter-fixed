@@ -1,5 +1,4 @@
-import prisma from "~/server/utils/prisma";
-
+import { prisma } from "~/server/lib/prisma"
 export async function enqueueWebhookJob(job: {
   eventId: string;
   provider: string;

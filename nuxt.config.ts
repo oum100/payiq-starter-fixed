@@ -10,8 +10,6 @@ export default defineNuxtConfig({
     scbClientId: process.env.SCB_CLIENT_ID,
     scbClientSecret: process.env.SCB_CLIENT_SECRET,
     scbCallbackSecret: process.env.SCB_CALLBACK_SECRET,
-
-    payiqWebhookSigningSecret: process.env.PAYIQ_WEBHOOK_SIGNING_SECRET,
   },
   nitro: {
     externals: {

@@ -1,6 +1,6 @@
 import { prisma } from "~/server/lib/prisma";
 import { processWebhookEvent } from "~/server/services/webhooks/processWebhookEvent";
-import { NonRetryableJobError } from "~/server/tasks/workers";
+import { NonRetryableJobError } from "~/server/tasks/job-errors";
 
 type WebhookInboundJob = {
   data: {

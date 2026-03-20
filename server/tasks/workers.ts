@@ -6,16 +6,7 @@ import { deliverWebhook } from "~/server/services/webhooks/deliverWebhook";
 import { reconcilePayment } from "~/server/services/reconcile/reconcilePayment";
 import { handleWebhookInboundJob } from "~/server/services/webhooks/handleWebhookInboundJob";
 import { logger } from "~/server/lib/logger";
-
-export class NonRetryableJobError extends Error {
-  code?: string;
-
-  constructor(message: string, code?: string) {
-    super(message);
-    this.name = "NonRetryableJobError";
-    this.code = code;
-  }
-}
+import { NonRetryableJobError } from "~/server/tasks/job-errors";
 
 type QueuePolicy = {
   queueName: string;

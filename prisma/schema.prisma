@@ -362,7 +362,7 @@ model PaymentIntent {
   reconciliationRecords ReconciliationRecord[]
   payloadArchives       PayloadArchive[]
 
-  @@unique([tenantId, merchantOrderId])
+  @@unique([tenantId, merchantAccountId, merchantOrderId])
   @@index([tenantId, status, createdAt])
   @@index([tenantId, paymentMethodType, status, createdAt])
   @@index([tenantId, merchantReference])

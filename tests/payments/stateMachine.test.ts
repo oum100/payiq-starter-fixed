@@ -1,0 +1,127 @@
+import { beforeEach, describe, expect, it, mock } from "bun:test";
+
+const txMock = {
+  paymentIntent: {
+    findUnique: mock(),
+    updateMany: mock(),
+  },
+  paymentEvent: {
+    create: mock(),
+  },
+};
+
+const prismaMock = {
+  $transaction: async (fn: any) => fn(txMock),
+};
+
+mock.module("~/server/lib/prisma", () => ({
+  prisma: prismaMock,
+}));
+
+const {
+  applyPaymentTransition,
+  canTransition,
+} = await import("~/server/services/payments/stateMachine");
+
+describe("payment state machine", () => {
+  beforeEach(() => {
+    txMock.paymentIntent.findUnique.mockReset();
+    txMock.paymentIntent.updateMany.mockReset();
+    txMock.paymentEvent.create.mockReset();
+  });
+
+  it("allows valid transition AWAITING_CUSTOMER -> SUCCEEDED", async () => {
+    txMock.paymentIntent.findUnique
+      .mockResolvedValueOnce({
+        id: "pi_1",
+        status: "AWAITING_CUSTOMER",
+      })
+      .mockResolvedValueOnce({
+        id: "pi_1",
+        status: "SUCCEEDED",
+      });
+
+    txMock.paymentIntent.updateMany.mockResolvedValue({ count: 1 });
+    txMock.paymentEvent.create.mockResolvedValue({ id: "evt_1" });
+
+    const result = await applyPaymentTransition({
+      paymentIntentId: "pi_1",
+      toStatus: "SUCCEEDED",
+      eventType: "PAYMENT_SUCCEEDED",
+      summary: "ok",
+    });
+
+    expect(result.applied).toBe(true);
+    expect(result.payment.status).toBe("SUCCEEDED");
+    expect(txMock.paymentEvent.create).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects invalid transition SUCCEEDED -> FAILED", async () => {
+    txMock.paymentIntent.findUnique.mockResolvedValue({
+      id: "pi_2",
+      status: "SUCCEEDED",
+    });
+
+    await expect(
+      applyPaymentTransition({
+        paymentIntentId: "pi_2",
+        toStatus: "FAILED",
+        eventType: "PAYMENT_FAILED",
+        summary: "bad",
+      }),
+    ).rejects.toThrow("invalid payment transition");
+  });
+
+  it("allows reconciliation override FAILED -> SUCCEEDED when explicitly allowed", async () => {
+    txMock.paymentIntent.findUnique
+      .mockResolvedValueOnce({
+        id: "pi_3",
+        status: "FAILED",
+      })
+      .mockResolvedValueOnce({
+        id: "pi_3",
+        status: "SUCCEEDED",
+      });
+
+    txMock.paymentIntent.updateMany.mockResolvedValue({ count: 1 });
+    txMock.paymentEvent.create.mockResolvedValue({ id: "evt_3" });
+
+    const result = await applyPaymentTransition({
+      paymentIntentId: "pi_3",
+      toStatus: "SUCCEEDED",
+      eventType: "RECONCILIATION_MATCHED",
+      summary: "recovered",
+      allowedFrom: ["FAILED", "PROCESSING"],
+      patch: {
+        lastReconciledAt: new Date("2026-03-21T00:00:00.000Z"),
+      },
+    });
+
+    expect(result.applied).toBe(true);
+    expect(txMock.paymentEvent.create).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns noop when status is unchanged", async () => {
+    txMock.paymentIntent.findUnique.mockResolvedValue({
+      id: "pi_4",
+      status: "SUCCEEDED",
+    });
+
+    const result = await applyPaymentTransition({
+      paymentIntentId: "pi_4",
+      toStatus: "SUCCEEDED",
+      eventType: "PAYMENT_SUCCEEDED",
+      summary: "noop",
+    });
+
+    expect(result.applied).toBe(false);
+    expect(result.reason).toBe("NOOP");
+    expect(txMock.paymentIntent.updateMany).not.toHaveBeenCalled();
+    expect(txMock.paymentEvent.create).not.toHaveBeenCalled();
+  });
+
+  it("canTransition reflects state rules", () => {
+    expect(canTransition("PENDING_PROVIDER", "AWAITING_CUSTOMER")).toBe(true);
+    expect(canTransition("SUCCEEDED", "FAILED")).toBe(false);
+  });
+});

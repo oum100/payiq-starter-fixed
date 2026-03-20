@@ -9,6 +9,9 @@ import {
   reserveIdempotency,
 } from "../idempotency/reserveIdempotency";
 import { getProviderAdapter } from "../providers/registry";
+import {
+  applyPaymentTransition,
+} from "~/server/services/payments/stateMachine";
 import type {
   CreatePaymentIntentInput,
   CreatePaymentIntentResult,
@@ -25,7 +28,7 @@ function toResponse(paymentIntent: {
   deeplinkUrl: string | null;
   redirectUrl: string | null;
   expiresAt: Date | null;
-}): CreatePaymentIntentResult {
+}) : CreatePaymentIntentResult {
   return {
     publicId: paymentIntent.publicId,
     status: paymentIntent.status,
@@ -94,14 +97,16 @@ export async function createPaymentIntent(
     return idem.responseBody as CreatePaymentIntentResult;
   }
 
-  let created: {
-    id: string;
-    publicId: string;
-    amount: any;
-    currency: string;
-    merchantOrderId: string | null;
-    expiresAt: Date | null;
-  } | null = null;
+  let created:
+    | {
+        id: string;
+        publicId: string;
+        amount: any;
+        currency: string;
+        merchantOrderId: string | null;
+        expiresAt: Date | null;
+      }
+    | null = null;
 
   try {
     const route = await resolvePaymentRoute({
@@ -130,7 +135,7 @@ export async function createPaymentIntent(
         amount: input.amount,
         feeAmount: "0",
         netAmount: input.amount,
-        status: "PENDING_PROVIDER",
+        status: "CREATED",
         customerName: input.customerName,
         customerEmail: input.customerEmail,
         customerPhone: input.customerPhone,
@@ -143,19 +148,30 @@ export async function createPaymentIntent(
               toStatus: "CREATED",
               summary: "Payment intent created",
             },
-            {
-              type: "ROUTE_RESOLVED",
-              fromStatus: "CREATED",
-              toStatus: "ROUTING",
-              summary: "Route resolved",
-              payload: {
-                routeId: route.id,
-                billerProfileId: route.billerProfile.id,
-                providerCode: route.providerCode,
-              },
-            },
           ],
         },
+      },
+    });
+
+    await applyPaymentTransition({
+      paymentIntentId: created.id,
+      toStatus: "ROUTING",
+      eventType: "ROUTE_RESOLVED",
+      summary: "Route resolved",
+      payload: {
+        routeId: route.id,
+        billerProfileId: route.billerProfile.id,
+        providerCode: route.providerCode,
+      },
+    });
+
+    await applyPaymentTransition({
+      paymentIntentId: created.id,
+      toStatus: "PENDING_PROVIDER",
+      eventType: "PROVIDER_REQUESTED",
+      summary: "Provider create payment requested",
+      payload: {
+        providerCode: route.providerCode,
       },
     });
 
@@ -199,48 +215,37 @@ export async function createPaymentIntent(
       },
     });
 
-    const updated = await prisma.paymentIntent.update({
-      where: { id: created.id },
-      data: providerResult.success
-        ? {
-            status: "AWAITING_CUSTOMER",
+    const transitioned = providerResult.success
+      ? await applyPaymentTransition({
+          paymentIntentId: created.id,
+          toStatus: "AWAITING_CUSTOMER",
+          eventType: "PROVIDER_ACCEPTED",
+          summary: "Provider created payment successfully",
+          patch: {
             providerReference: providerResult.providerReference,
             providerTransactionId: providerResult.providerTransactionId,
             qrPayload: providerResult.qrPayload,
             deeplinkUrl: providerResult.deeplinkUrl,
             redirectUrl: providerResult.redirectUrl,
-            events: {
-              create: [
-                {
-                  type: "PROVIDER_ACCEPTED",
-                  fromStatus: "PENDING_PROVIDER",
-                  toStatus: "AWAITING_CUSTOMER",
-                  summary: "Provider created payment successfully",
-                },
-              ],
-            },
-          }
-        : {
-            status: "FAILED",
-            failedAt: new Date(),
-            events: {
-              create: [
-                {
-                  type: "PROVIDER_REJECTED",
-                  fromStatus: "PENDING_PROVIDER",
-                  toStatus: "FAILED",
-                  summary:
-                    providerResult.errorMessage || "Provider rejected payment",
-                  payload: {
-                    errorCode: providerResult.errorCode,
-                  },
-                },
-              ],
-            },
           },
-    });
+          payload: {
+            providerReference: providerResult.providerReference,
+            providerTransactionId: providerResult.providerTransactionId,
+          },
+        })
+      : await applyPaymentTransition({
+          paymentIntentId: created.id,
+          toStatus: "FAILED",
+          eventType: "PROVIDER_REJECTED",
+          summary:
+            providerResult.errorMessage || "Provider rejected payment",
+          payload: {
+            errorCode: providerResult.errorCode,
+            errorMessage: providerResult.errorMessage,
+          },
+        });
 
-    const response = toResponse(updated);
+    const response = toResponse(transitioned.payment);
 
     await completeIdempotency({
       tenantId: auth.tenantId,
@@ -248,38 +253,28 @@ export async function createPaymentIntent(
       responseStatusCode: 200,
       responseBody: response,
       resourceType: "PaymentIntent",
-      resourceId: updated.id,
+      resourceId: transitioned.payment.id,
     });
 
     return response;
   } catch (error: any) {
     if (created?.id) {
       try {
-        const failed = await prisma.paymentIntent.update({
-          where: { id: created.id },
-          data: {
-            status: "FAILED",
-            failedAt: new Date(),
-            events: {
-              create: [
-                {
-                  type: "PAYMENT_FAILED",
-                  fromStatus: "PENDING_PROVIDER",
-                  toStatus: "FAILED",
-                  summary: "Payment failed due to internal/provider exception",
-                  payload: {
-                    message:
-                      typeof error?.message === "string"
-                        ? error.message.slice(0, 500)
-                        : "unknown",
-                  },
-                },
-              ],
-            },
+        const failedTransition = await applyPaymentTransition({
+          paymentIntentId: created.id,
+          toStatus: "FAILED",
+          eventType: "PAYMENT_FAILED",
+          summary: "Payment failed due to internal/provider exception",
+          allowedFrom: ["CREATED", "ROUTING", "PENDING_PROVIDER", "AWAITING_CUSTOMER", "PROCESSING"],
+          payload: {
+            message:
+              typeof error?.message === "string"
+                ? error.message.slice(0, 500)
+                : "unknown",
           },
         });
 
-        const failureResponse = toResponse(failed);
+        const failureResponse = toResponse(failedTransition.payment);
 
         await completeIdempotency({
           tenantId: auth.tenantId,
@@ -287,7 +282,7 @@ export async function createPaymentIntent(
           responseStatusCode: 200,
           responseBody: failureResponse,
           resourceType: "PaymentIntent",
-          resourceId: failed.id,
+          resourceId: failedTransition.payment.id,
         });
       } catch {
         // best effort

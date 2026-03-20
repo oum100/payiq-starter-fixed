@@ -6,12 +6,15 @@ import {
   setResponseStatus,
 } from "h3";
 import { prisma } from "~/server/lib/prisma";
-import { verifyWebhookSignature } from "~/server/utils/webhook/verify";
-// import { webhookInboundQueue } from "~/server/lib/bullmq";
 import { redis } from "~/server/lib/redis";
-
+import {
+  getEventRequestContext,
+  setEventRequestContext,
+} from "~/server/lib/request-context";
+import { logEvent } from "~/server/lib/observability";
 import { webhookInboundQueue } from "~/server/tasks/queues";
 import { QUEUE_POLICIES } from "~/server/tasks/queue-policy";
+import { verifyWebhookSignature } from "~/server/utils/webhook/verify";
 
 function getErrorMessage(error: unknown) {
   if (error instanceof Error) return error.message;
@@ -35,7 +38,9 @@ function normalizeIp(ip: string | null | undefined): string | null {
   return ip;
 }
 
-function assertIpAllowed(event: any) {
+function assertIpAllowed(
+  event: Parameters<typeof defineEventHandler>[0] extends never ? any : any,
+) {
   const allowedIps = getAllowedIps();
 
   if (!allowedIps.length) return;
@@ -53,7 +58,10 @@ function getWebhookRateLimit(): number {
   return Math.floor(raw);
 }
 
-async function assertWebhookRateLimit(event: any, provider: string) {
+async function assertWebhookRateLimit(
+  event: Parameters<typeof defineEventHandler>[0] extends never ? any : any,
+  provider: string,
+) {
   const limit = getWebhookRateLimit();
   const requestIp =
     normalizeIp(getRequestIP(event, { xForwardedFor: true })) || "unknown";
@@ -74,7 +82,7 @@ async function assertWebhookRateLimit(event: any, provider: string) {
     const retryAfterSec = ttlMs > 0 ? Math.max(1, Math.ceil(ttlMs / 1000)) : 60;
 
     const error = new Error("rate limit exceeded");
-    (error as any).retryAfterSec = retryAfterSec;
+    (error as Error & { retryAfterSec?: number }).retryAfterSec = retryAfterSec;
     throw error;
   }
 }
@@ -83,17 +91,54 @@ export default defineEventHandler(async (event) => {
   const provider = event.context.params?.provider;
 
   if (!provider) {
+    logEvent({
+      level: "warn",
+      event: "webhook.inbound.invalid_request",
+      data: {
+        reason: "missing_provider",
+      },
+    });
+
     setResponseStatus(event, 400);
     return { error: "missing provider" };
   }
+
+  setEventRequestContext(event, {
+    provider,
+  });
 
   const rawBody = (await readRawBody(event, "utf8")) || "";
   const signature = getHeader(event, "x-payiq-signature") || "";
   const timestamp = getHeader(event, "x-payiq-timestamp") || "";
   const eventId = getHeader(event, "x-payiq-event-id") || "";
   const merchantId = getHeader(event, "x-merchant-id") || null;
+  const requestIp = normalizeIp(getRequestIP(event, { xForwardedFor: true }));
+
+  logEvent({
+    event: "webhook.inbound.received",
+    data: {
+      provider,
+      eventId,
+      merchantId,
+      requestIp,
+      hasSignature: Boolean(signature),
+      hasTimestamp: Boolean(timestamp),
+      payloadSize: Buffer.byteLength(rawBody, "utf8"),
+    },
+  });
 
   if (!eventId) {
+    logEvent({
+      level: "warn",
+      event: "webhook.inbound.invalid_request",
+      data: {
+        provider,
+        merchantId,
+        requestIp,
+        reason: "missing_event_id",
+      },
+    });
+
     setResponseStatus(event, 400);
     return { error: "missing event id" };
   }
@@ -112,9 +157,24 @@ export default defineEventHandler(async (event) => {
   });
 
   if (existing) {
+    setEventRequestContext(event, {
+      webhookEventId: existing.id,
+    });
+
     await prisma.webhookEvent.update({
       where: { id: existing.id },
       data: { status: "DUPLICATE" },
+    });
+
+    logEvent({
+      level: "warn",
+      event: "webhook.inbound.duplicate",
+      data: {
+        provider,
+        eventId,
+        webhookEventId: existing.id,
+        previousStatus: existing.status,
+      },
     });
 
     setResponseStatus(event, 200);
@@ -139,6 +199,21 @@ export default defineEventHandler(async (event) => {
     },
   });
 
+  setEventRequestContext(event, {
+    webhookEventId: created.id,
+  });
+
+  logEvent({
+    event: "webhook.inbound.persisted",
+    data: {
+      provider,
+      eventId,
+      merchantId,
+      webhookEventId: created.id,
+      status: "RECEIVED",
+    },
+  });
+
   try {
     assertIpAllowed(event);
     await assertWebhookRateLimit(event, provider);
@@ -158,26 +233,30 @@ export default defineEventHandler(async (event) => {
       },
     });
 
-    // await webhookInboundQueue.add(
-    //   "provider.webhook.process",
-    //   {
-    //     webhookEventId: created.id,
-    //   },
-    //   {
-    //     jobId: `webhook__${created.id}`,
-    //     attempts: 5,
-    //     backoff: {
-    //       type: "exponential",
-    //       delay: 2000,
-    //     },
-    //     removeOnComplete: 1000,
-    //     removeOnFail: 1000,
-    //   },
-    // );
+    logEvent({
+      event: "webhook.inbound.verified",
+      data: {
+        provider,
+        webhookEventId: created.id,
+      },
+    });
+
+    const context = getEventRequestContext(event);
+
     await webhookInboundQueue.add(
       QUEUE_POLICIES.webhookInbound.jobName,
       {
         webhookEventId: created.id,
+        meta: {
+          requestId: context.requestId,
+          traceId: context.traceId,
+          provider: context.provider,
+          tenantId: context.tenantId,
+          apiKeyPrefix: context.apiKeyPrefix,
+          method: context.method,
+          path: context.path,
+          route: context.route,
+        },
       },
       {
         jobId: `webhook__${created.id}`,
@@ -191,11 +270,23 @@ export default defineEventHandler(async (event) => {
       },
     );
 
+    logEvent({
+      event: "webhook.inbound.enqueued",
+      data: {
+        provider,
+        webhookEventId: created.id,
+        queue: QUEUE_POLICIES.webhookInbound.queueName,
+        jobName: QUEUE_POLICIES.webhookInbound.jobName,
+        jobId: `webhook__${created.id}`,
+      },
+    });
+
     setResponseStatus(event, 200);
     return { ok: true };
   } catch (error) {
     const message = getErrorMessage(error);
-    const retryAfterSec = (error as any)?.retryAfterSec;
+    const retryAfterSec = (error as Error & { retryAfterSec?: number })
+      ?.retryAfterSec;
 
     await prisma.webhookEvent.update({
       where: { id: created.id },
@@ -203,6 +294,19 @@ export default defineEventHandler(async (event) => {
         status: "FAILED",
         lastError: message,
       },
+    });
+
+    logEvent({
+      level: "error",
+      event: "webhook.inbound.failed",
+      data: {
+        provider,
+        eventId,
+        merchantId,
+        webhookEventId: created.id,
+        retryAfterSec,
+      },
+      error,
     });
 
     if (retryAfterSec) {

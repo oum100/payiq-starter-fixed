@@ -6,6 +6,7 @@ import { deliverWebhook } from "~/server/services/webhooks/deliverWebhook";
 import { reconcilePayment } from "~/server/services/reconcile/reconcilePayment";
 import { handleWebhookInboundJob } from "~/server/services/webhooks/handleWebhookInboundJob";
 import { logger } from "~/server/lib/logger";
+import { runWithRequestContext } from "~/server/lib/request-context";
 import { NonRetryableJobError } from "~/server/tasks/job-errors";
 
 type QueuePolicy = {
@@ -47,6 +48,34 @@ const QUEUE_POLICIES = {
   },
 } as const satisfies Record<string, QueuePolicy>;
 
+type JobMeta = {
+  requestId?: string;
+  traceId?: string;
+  provider?: string;
+  tenantId?: string;
+  apiKeyPrefix?: string;
+  method?: string;
+  path?: string;
+  route?: string;
+};
+
+type JobDataWithMeta = {
+  meta?: JobMeta;
+  webhookEventId?: string;
+  paymentIntentId?: string;
+  providerCallbackId?: string;
+  webhookDeliveryId?: string;
+};
+
+function getJobMeta(job: Job): JobMeta {
+  const data = (job.data ?? {}) as JobDataWithMeta;
+  return data.meta ?? {};
+}
+
+function getJobData(job: Job): JobDataWithMeta {
+  return (job.data ?? {}) as JobDataWithMeta;
+}
+
 function serializeError(error: unknown) {
   if (error instanceof Error) {
     return {
@@ -72,12 +101,27 @@ function logJobEvent(input: {
   data?: Record<string, unknown>;
   error?: unknown;
 }) {
+  const meta = input.job ? getJobMeta(input.job) : {};
+  const jobData = input.job ? getJobData(input.job) : {};
+
   const payload = {
     event: input.event,
     queue: input.queue,
     jobId: input.job?.id,
     jobName: input.job?.name,
     attemptsMade: input.job?.attemptsMade,
+    requestId: meta.requestId,
+    traceId: meta.traceId,
+    provider: meta.provider,
+    tenantId: meta.tenantId,
+    apiKeyPrefix: meta.apiKeyPrefix,
+    method: meta.method,
+    path: meta.path,
+    route: meta.route,
+    webhookEventId: jobData.webhookEventId,
+    paymentIntentId: jobData.paymentIntentId,
+    providerCallbackId: jobData.providerCallbackId,
+    webhookDeliveryId: jobData.webhookDeliveryId,
     data: input.data,
     error: input.error ? serializeError(input.error) : undefined,
   };
@@ -120,6 +164,7 @@ async function moveToDlq(params: {
   error: unknown;
 }) {
   const { dlq, sourceQueue, job, error } = params;
+  const data = getJobData(job);
 
   await dlq.add(
     `${job.name}.dlq`,
@@ -131,6 +176,7 @@ async function moveToDlq(params: {
       attemptsMade: job.attemptsMade + 1,
       payload: job.data,
       error: serializeError(error),
+      meta: data.meta,
     },
     {
       jobId: `${sourceQueue}__dlq__${job.id}`,
@@ -211,10 +257,37 @@ function buildWorker(params: {
         event: "job.started",
         queue: queueName,
         job,
+        data: {
+          webhookEventId: getJobData(job).webhookEventId,
+          paymentIntentId: getJobData(job).paymentIntentId,
+          traceId: getJobMeta(job).traceId,
+          requestId: getJobMeta(job).requestId,
+          provider: getJobMeta(job).provider,
+          tenantId: getJobMeta(job).tenantId,
+        },
       });
 
       try {
-        await processor(job);
+        await runWithRequestContext(
+          {
+            requestId: getJobMeta(job).requestId,
+            traceId: getJobMeta(job).traceId,
+            provider: getJobMeta(job).provider,
+            tenantId: getJobMeta(job).tenantId,
+            apiKeyPrefix: getJobMeta(job).apiKeyPrefix,
+            method: getJobMeta(job).method,
+            path: getJobMeta(job).path,
+            route: getJobMeta(job).route,
+            webhookEventId: getJobData(job).webhookEventId,
+            paymentIntentId: getJobData(job).paymentIntentId,
+            queue: queueName,
+            jobId: String(job.id),
+            jobName: job.name,
+          },
+          async () => {
+            await processor(job);
+          },
+        );
 
         logJobEvent({
           event: "job.completed",
@@ -289,7 +362,8 @@ buildWorker({
   concurrency: QUEUE_POLICIES.providerCallback.concurrency,
   dlq: callbackDlq,
   processor: async (job) => {
-    await processProviderCallback(job.data.providerCallbackId);
+    const data = getJobData(job);
+    await processProviderCallback(data.providerCallbackId as string);
   },
 });
 
@@ -299,7 +373,8 @@ buildWorker({
   concurrency: QUEUE_POLICIES.merchantWebhook.concurrency,
   dlq: webhookDlq,
   processor: async (job) => {
-    await deliverWebhook(job.data.webhookDeliveryId);
+    const data = getJobData(job);
+    await deliverWebhook(data.webhookDeliveryId as string);
   },
 });
 
@@ -319,7 +394,8 @@ buildWorker({
   concurrency: QUEUE_POLICIES.reconcile.concurrency,
   dlq: reconcileDlq,
   processor: async (job) => {
-    await reconcilePayment(job.data.paymentIntentId);
+    const data = getJobData(job);
+    await reconcilePayment(data.paymentIntentId as string);
   },
 });
 

@@ -33,4 +33,4 @@ appendonly.aof
 
 *.pem
 *.key
-*.crt
+*.crt.DS_Store

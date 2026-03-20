@@ -1,24 +1,20 @@
-import {
-  createError,
-  defineEventHandler,
-  setResponseHeader,
-} from "h3"
-import { requireApiKeyAuth } from "~/server/lib/auth"
-import { getClientIpHash } from "~/server/lib/rate-limit/request"
-import { rateLimitService } from "~/server/lib/rate-limit/service"
-import { ROUTE_LIMITS } from "~/server/lib/rate-limit/config"
-import type { ResolvedRateLimitPolicy } from "~/server/lib/rate-limit/types"
+import { createError, defineEventHandler, setResponseHeader } from "h3";
+import { requireApiKeyAuth } from "~/server/lib/auth";
+import { getClientIpHash } from "~/server/lib/rate-limit/request";
+import { rateLimitService } from "~/server/lib/rate-limit/service";
+import { ROUTE_LIMITS } from "~/server/lib/rate-limit/config";
+import type { ResolvedRateLimitPolicy } from "~/server/lib/rate-limit/types";
 
 function isProtectedPath(path: string) {
-  if (path === "/api/v1/health") return false
-  return path.startsWith("/api/v1/")
+  if (path === "/api/v1/health") return false;
+  return path.startsWith("/api/v1/");
 }
 
 function buildAuthPolicy(
   routeGroup: "auth:malformed" | "auth:unknown" | "auth:failed",
   ipHash: string,
 ): ResolvedRateLimitPolicy {
-  const base = ROUTE_LIMITS[routeGroup]
+  const base = ROUTE_LIMITS[routeGroup];
 
   return {
     scope: "ip",
@@ -29,19 +25,23 @@ function buildAuthPolicy(
     cost: base.cost ?? 1,
     ttlSec: base.ttlSec ?? 3600,
     blockDurationSec: base.blockDurationSec ?? 0,
-  }
+  };
 }
 
 async function denyWithAbuseControl(
-  event: Parameters<typeof defineEventHandler>[0] extends (e: infer E) => any ? E : never,
+  event: Parameters<typeof defineEventHandler>[0] extends (e: infer E) => any
+    ? E
+    : never,
   routeGroup: "auth:malformed" | "auth:unknown" | "auth:failed",
   message: string,
 ) {
-  const ipHash = getClientIpHash(event)
-  const decision = await rateLimitService.check(buildAuthPolicy(routeGroup, ipHash))
+  const ipHash = getClientIpHash(event);
+  const decision = await rateLimitService.check(
+    buildAuthPolicy(routeGroup, ipHash),
+  );
 
   if (!decision.allowed) {
-    setResponseHeader(event, "Retry-After", String(decision.retryAfterSec))
+    setResponseHeader(event, "Retry-After", decision.retryAfterSec);
 
     throw createError({
       statusCode: 429,
@@ -51,7 +51,7 @@ async function denyWithAbuseControl(
         routeGroup,
         retryAfterSec: decision.retryAfterSec,
       },
-    })
+    });
   }
 
   throw createError({
@@ -60,19 +60,19 @@ async function denyWithAbuseControl(
     data: {
       code: message,
     },
-  })
+  });
 }
 
 export default defineEventHandler(async (event) => {
-  if (!isProtectedPath(event.path)) return
+  if (!isProtectedPath(event.path)) return;
 
   try {
-    await requireApiKeyAuth(event)
+    await requireApiKeyAuth(event);
   } catch (error: any) {
-    const message = String(error?.message || "")
+    const message = String(error?.message || "");
 
     if (message.includes("Malformed API key")) {
-      await denyWithAbuseControl(event, "auth:malformed", "MALFORMED_API_KEY")
+      await denyWithAbuseControl(event, "auth:malformed", "MALFORMED_API_KEY");
     }
 
     if (
@@ -80,7 +80,7 @@ export default defineEventHandler(async (event) => {
       message.includes("API key not found") ||
       message.includes("Unknown API key")
     ) {
-      await denyWithAbuseControl(event, "auth:unknown", "INVALID_API_KEY")
+      await denyWithAbuseControl(event, "auth:unknown", "INVALID_API_KEY");
     }
 
     if (
@@ -88,9 +88,9 @@ export default defineEventHandler(async (event) => {
       message.includes("Invalid API key") ||
       message.includes("Unauthorized")
     ) {
-      await denyWithAbuseControl(event, "auth:failed", "INVALID_API_KEY")
+      await denyWithAbuseControl(event, "auth:failed", "INVALID_API_KEY");
     }
 
-    throw error
+    throw error;
   }
-})
+});

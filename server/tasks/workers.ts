@@ -27,7 +27,7 @@ new Worker(
   { connection: redis, concurrency: 50 },
 );
 
-const webhookDlq = new Queue(`${queueNames.webhookInbound}:dlq`, {
+const webhookDlq = new Queue(`${queueNames.webhookInbound}-dlq`, {
   connection: redis,
 });
 

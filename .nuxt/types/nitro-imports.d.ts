@@ -21,7 +21,6 @@ declare global {
   const createError: typeof import('../../node_modules/h3').createError
   const createEvent: typeof import('../../node_modules/h3').createEvent
   const createEventStream: typeof import('../../node_modules/h3').createEventStream
-  const createRedisConnection: typeof import('../../server/utils/queue/bullmq').createRedisConnection
   const createRouter: typeof import('../../node_modules/h3').createRouter
   const createWebhookDLQ: typeof import('../../server/utils/queue/bullmq').createWebhookDLQ
   const createWebhookQueue: typeof import('../../server/utils/queue/bullmq').createWebhookQueue
@@ -50,6 +49,7 @@ declare global {
   const fromNodeMiddleware: typeof import('../../node_modules/h3').fromNodeMiddleware
   const fromPlainHandler: typeof import('../../node_modules/h3').fromPlainHandler
   const fromWebHandler: typeof import('../../node_modules/h3').fromWebHandler
+  const getBullMQConnection: typeof import('../../server/utils/queue/bullmq').getBullMQConnection
   const getCookie: typeof import('../../node_modules/h3').getCookie
   const getHeader: typeof import('../../node_modules/h3').getHeader
   const getHeaders: typeof import('../../node_modules/h3').getHeaders
@@ -167,7 +167,7 @@ export { defineNitroErrorHandler } from 'nitropack/runtime/internal/error/utils'
 export { buildAssetsURL as __buildAssetsURL, publicAssetsURL as __publicAssetsURL } from '/Users/teerin/Documents/MyDev/Nuxt4/payiq-starter-fixed/node_modules/@nuxt/nitro-server/dist/runtime/utils/paths';
 export { defineAppConfig } from '/Users/teerin/Documents/MyDev/Nuxt4/payiq-starter-fixed/node_modules/@nuxt/nitro-server/dist/runtime/utils/config';
 export { webhookMetrics, register } from '/Users/teerin/Documents/MyDev/Nuxt4/payiq-starter-fixed/server/utils/metrics/prometheus';
-export { webhookQueueName, webhookDLQName, createRedisConnection, createWebhookQueue, createWebhookDLQ } from '/Users/teerin/Documents/MyDev/Nuxt4/payiq-starter-fixed/server/utils/queue/bullmq';
+export { webhookQueueName, webhookDLQName, getBullMQConnection, createWebhookQueue, createWebhookDLQ } from '/Users/teerin/Documents/MyDev/Nuxt4/payiq-starter-fixed/server/utils/queue/bullmq';
 export { processWebhook } from '/Users/teerin/Documents/MyDev/Nuxt4/payiq-starter-fixed/server/utils/queue/webhook.processor';
 export { enqueueWebhookJob } from '/Users/teerin/Documents/MyDev/Nuxt4/payiq-starter-fixed/server/utils/queue/webhook.queue';
 export { webhookWorker } from '/Users/teerin/Documents/MyDev/Nuxt4/payiq-starter-fixed/server/utils/queue/webhook.worker';

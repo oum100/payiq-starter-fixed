@@ -20,8 +20,7 @@ import * as node_cluster from 'node:cluster';
 import { z } from 'file:///Users/teerin/Documents/MyDev/Nuxt4/payiq-starter-fixed/node_modules/zod/index.js';
 import { nanoid } from 'file:///Users/teerin/Documents/MyDev/Nuxt4/payiq-starter-fixed/node_modules/nanoid/index.js';
 import { PrismaClient, Prisma } from 'file:///Users/teerin/Documents/MyDev/Nuxt4/payiq-starter-fixed/node_modules/@prisma/client/default.js';
-import BullMQ, { Queue as Queue$1 } from 'file:///Users/teerin/Documents/MyDev/Nuxt4/payiq-starter-fixed/node_modules/bullmq/dist/cjs/index.js';
-import IORedis from 'file:///Users/teerin/Documents/MyDev/Nuxt4/payiq-starter-fixed/node_modules/ioredis/built/index.js';
+import { Queue } from 'file:///Users/teerin/Documents/MyDev/Nuxt4/payiq-starter-fixed/node_modules/bullmq/dist/cjs/index.js';
 import { createRenderer, getRequestDependencies, getPreloadLinks, getPrefetchLinks } from 'file:///Users/teerin/Documents/MyDev/Nuxt4/payiq-starter-fixed/node_modules/vue-bundle-renderer/dist/runtime.mjs';
 import { parseURL, withoutBase, joinURL, getQuery, withQuery, withTrailingSlash, decodePath, withLeadingSlash, withoutTrailingSlash, joinRelativeURL } from 'file:///Users/teerin/Documents/MyDev/Nuxt4/payiq-starter-fixed/node_modules/ufo/dist/index.mjs';
 import destr, { destr as destr$1 } from 'file:///Users/teerin/Documents/MyDev/Nuxt4/payiq-starter-fixed/node_modules/destr/dist/index.mjs';
@@ -47,6 +46,7 @@ import { captureRawStackTrace, parseRawStackTrace } from 'file:///Users/teerin/D
 import { isVNode, isRef, toValue } from 'file:///Users/teerin/Documents/MyDev/Nuxt4/payiq-starter-fixed/node_modules/vue/index.mjs';
 import _wH6JrtIxmaSoA8lCPWFnE9z4lQeXW6H5z3l5aymEQw from 'file:///Users/teerin/Documents/MyDev/Nuxt4/payiq-starter-fixed/node_modules/@nuxt/vite-builder/dist/fix-stacktrace.mjs';
 import { dirname as dirname$1, resolve as resolve$1 } from 'file:///Users/teerin/Documents/MyDev/Nuxt4/payiq-starter-fixed/node_modules/pathe/dist/index.mjs';
+import IORedis from 'file:///Users/teerin/Documents/MyDev/Nuxt4/payiq-starter-fixed/node_modules/ioredis/built/index.js';
 import { createHead as createHead$1, propsToString, renderSSRHead } from 'file:///Users/teerin/Documents/MyDev/Nuxt4/payiq-starter-fixed/node_modules/unhead/dist/server.mjs';
 import { renderToString } from 'file:///Users/teerin/Documents/MyDev/Nuxt4/payiq-starter-fixed/node_modules/vue/server-renderer/index.mjs';
 import { walkResolver } from 'file:///Users/teerin/Documents/MyDev/Nuxt4/payiq-starter-fixed/node_modules/unhead/dist/utils.mjs';
@@ -2162,22 +2162,7 @@ _eseZhqReVR4kuQoTcHxmE8SKXG4ufZRCkuu32o4Fs,
 _wH6JrtIxmaSoA8lCPWFnE9z4lQeXW6H5z3l5aymEQw
 ];
 
-const assets = {
-  "/index.mjs": {
-    "type": "text/javascript; charset=utf-8",
-    "etag": "\"4e7c4-kjtiOojFMLGIJblhNMShhRFRKIk\"",
-    "mtime": "2026-03-19T17:36:28.034Z",
-    "size": 321476,
-    "path": "index.mjs"
-  },
-  "/index.mjs.map": {
-    "type": "application/json",
-    "etag": "\"146ab0-KB1aHtvXNLiDPGN+Ig6kiTQxPlM\"",
-    "mtime": "2026-03-19T17:36:28.034Z",
-    "size": 1338032,
-    "path": "index.mjs.map"
-  }
-};
+const assets = {};
 
 function readAsset (id) {
   const serverDir = dirname$1(fileURLToPath(globalThis._importMeta_.url));
@@ -2268,10 +2253,10 @@ const _fKbPNG = eventHandler((event) => {
 
 var _a$1;
 const globalForPrisma = globalThis;
-const prisma$1 = (_a$1 = globalForPrisma.prisma) != null ? _a$1 : new PrismaClient({
+const prisma = (_a$1 = globalForPrisma.prisma) != null ? _a$1 : new PrismaClient({
   log: ["warn", "error"]
 });
-globalForPrisma.prisma = prisma$1;
+globalForPrisma.prisma = prisma;
 
 var __defProp = Object.defineProperty;
 var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
@@ -2325,7 +2310,7 @@ async function resolveApiKey(fullApiKey) {
   if (!parsed) {
     throw new AppError("UNAUTHORIZED", "Malformed API key", 401);
   }
-  const record = await prisma$1.apiKey.findFirst({
+  const record = await prisma.apiKey.findFirst({
     where: {
       keyPrefix: parsed.keyPrefix,
       status: "ACTIVE",
@@ -2352,7 +2337,7 @@ async function resolveApiKey(fullApiKey) {
   if (record.merchantAccountId && ((_a = record.merchantAccount) == null ? void 0 : _a.status) !== "ACTIVE") {
     throw new AppError("FORBIDDEN", "Merchant is inactive", 403);
   }
-  await prisma$1.apiKey.update({
+  await prisma.apiKey.update({
     where: { id: record.id },
     data: { lastUsedAt: /* @__PURE__ */ new Date() }
   });
@@ -8446,7 +8431,7 @@ function requireScope(auth, scope) {
 }
 
 async function revokeApiKey(params) {
-  const existing = await prisma$1.apiKey.findFirst({
+  const existing = await prisma.apiKey.findFirst({
     where: {
       id: params.apiKeyId,
       tenantId: params.tenantId,
@@ -8456,7 +8441,7 @@ async function revokeApiKey(params) {
   if (!existing) {
     throw new AppError("API_KEY_NOT_FOUND", "API key not found", 404);
   }
-  return prisma$1.apiKey.update({
+  return prisma.apiKey.update({
     where: { id: existing.id },
     data: {
       revokedAt: /* @__PURE__ */ new Date(),
@@ -8506,13 +8491,13 @@ const revoke_post$1 = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.definePrope
 }, Symbol.toStringTag, { value: 'Module' }));
 
 async function createApiKey(params) {
-  const tenant = await prisma$1.tenant.findUnique({
+  const tenant = await prisma.tenant.findUnique({
     where: { code: params.tenantCode }
   });
   if (!tenant) {
     throw new AppError("TENANT_NOT_FOUND", "Tenant not found", 404);
   }
-  const merchant = params.merchantCode ? await prisma$1.merchantAccount.findFirst({
+  const merchant = params.merchantCode ? await prisma.merchantAccount.findFirst({
     where: {
       tenantId: tenant.id,
       code: params.merchantCode
@@ -8524,7 +8509,7 @@ async function createApiKey(params) {
   const keyPrefix = generateKeyPrefix(params.environment || "test");
   const secret = generateApiKeySecret();
   const secretHash = hashApiKeySecret(secret);
-  const created = await prisma$1.apiKey.create({
+  const created = await prisma.apiKey.create({
     data: {
       tenantId: tenant.id,
       merchantAccountId: (merchant == null ? void 0 : merchant.id) || null,
@@ -8550,7 +8535,7 @@ async function createApiKey(params) {
 
 async function rotateApiKey(params) {
   var _a;
-  const existing = await prisma$1.apiKey.findFirst({
+  const existing = await prisma.apiKey.findFirst({
     where: {
       id: params.apiKeyId,
       tenantId: params.tenantId,
@@ -8615,7 +8600,7 @@ const rotate_post$1 = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.definePrope
 }, Symbol.toStringTag, { value: 'Module' }));
 
 async function listApiKeys(params) {
-  return prisma$1.apiKey.findMany({
+  return prisma.apiKey.findMany({
     where: {
       tenantId: params.tenantId,
       ...params.merchantAccountId ? { merchantAccountId: params.merchantAccountId } : {}
@@ -8709,7 +8694,7 @@ const index_post$3 = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.defineProper
 }, Symbol.toStringTag, { value: 'Module' }));
 
 async function getPaymentIntent(auth, publicId) {
-  const payment = await prisma$1.paymentIntent.findFirst({
+  const payment = await prisma.paymentIntent.findFirst({
     where: {
       publicId,
       tenantId: auth.tenantId,
@@ -8771,7 +8756,7 @@ const _publicId__get$1 = /*#__PURE__*/Object.freeze(/*#__PURE__*/Object.definePr
 }, Symbol.toStringTag, { value: 'Module' }));
 
 async function resolvePaymentRoute(params) {
-  const route = await prisma$1.paymentRoute.findFirst({
+  const route = await prisma.paymentRoute.findFirst({
     where: {
       tenantId: params.tenantId,
       paymentMethodType: params.paymentMethodType,
@@ -8834,7 +8819,7 @@ async function reserveIdempotency(input) {
   const requestHash = hashRequestBody(input.requestBody);
   while (true) {
     const now = /* @__PURE__ */ new Date();
-    const existing = await prisma$1.idempotencyKey.findUnique({
+    const existing = await prisma.idempotencyKey.findUnique({
       where: {
         tenantId_key: {
           tenantId: input.tenantId,
@@ -8844,7 +8829,7 @@ async function reserveIdempotency(input) {
     });
     if (!existing) {
       try {
-        await prisma$1.idempotencyKey.create({
+        await prisma.idempotencyKey.create({
           data: {
             tenantId: input.tenantId,
             key: input.key,
@@ -8874,7 +8859,7 @@ async function reserveIdempotency(input) {
       }
     }
     if (existing.expiresAt && existing.expiresAt.getTime() <= now.getTime()) {
-      const reclaimed = await prisma$1.idempotencyKey.updateMany({
+      const reclaimed = await prisma.idempotencyKey.updateMany({
         where: {
           tenantId: input.tenantId,
           key: input.key,
@@ -8940,7 +8925,7 @@ async function reserveIdempotency(input) {
         );
       }
     }
-    const claimed = await prisma$1.idempotencyKey.updateMany({
+    const claimed = await prisma.idempotencyKey.updateMany({
       where: {
         tenantId: input.tenantId,
         key: input.key,
@@ -8964,7 +8949,7 @@ async function reserveIdempotency(input) {
 async function completeIdempotency(input) {
   var _a, _b;
   if (!input.key) return;
-  await prisma$1.idempotencyKey.update({
+  await prisma.idempotencyKey.update({
     where: {
       tenantId_key: {
         tenantId: input.tenantId,
@@ -8984,7 +8969,7 @@ async function completeIdempotency(input) {
 }
 async function releaseIdempotencyLock(input) {
   if (!input.key) return;
-  await prisma$1.idempotencyKey.update({
+  await prisma.idempotencyKey.update({
     where: {
       tenantId_key: {
         tenantId: input.tenantId,
@@ -9154,7 +9139,7 @@ async function createPaymentIntent(auth, input, opts) {
       403
     );
   }
-  const merchant = await prisma$1.merchantAccount.findFirst({
+  const merchant = await prisma.merchantAccount.findFirst({
     where: {
       id: auth.merchantAccountId,
       tenantId: auth.tenantId,
@@ -9168,7 +9153,7 @@ async function createPaymentIntent(auth, input, opts) {
       404
     );
   }
-  const existingMerchantOrder = input.merchantOrderId ? await prisma$1.paymentIntent.findFirst({
+  const existingMerchantOrder = input.merchantOrderId ? await prisma.paymentIntent.findFirst({
     where: {
       tenantId: auth.tenantId,
       merchantAccountId: merchant.id,
@@ -9199,7 +9184,7 @@ async function createPaymentIntent(auth, input, opts) {
     const publicId = `piq_${nanoid(24)}`;
     const callbackUrl = `${process.env.APP_BASE_URL}/api/v1/providers/scb/callback`;
     const expiresAt = new Date(Date.now() + 15 * 60 * 1e3);
-    created = await prisma$1.paymentIntent.create({
+    created = await prisma.paymentIntent.create({
       data: {
         tenantId: auth.tenantId,
         merchantAccountId: merchant.id,
@@ -9260,7 +9245,7 @@ async function createPaymentIntent(auth, input, opts) {
         config: route.billerProfile.config
       }
     });
-    await prisma$1.providerAttempt.create({
+    await prisma.providerAttempt.create({
       data: {
         paymentIntentId: created.id,
         billerProfileId: route.billerProfile.id,
@@ -9280,7 +9265,7 @@ async function createPaymentIntent(auth, input, opts) {
         completedAt: /* @__PURE__ */ new Date()
       }
     });
-    const updated = await prisma$1.paymentIntent.update({
+    const updated = await prisma.paymentIntent.update({
       where: { id: created.id },
       data: providerResult.success ? {
         status: "AWAITING_CUSTOMER",
@@ -9330,7 +9315,7 @@ async function createPaymentIntent(auth, input, opts) {
   } catch (error) {
     if (created == null ? void 0 : created.id) {
       try {
-        const failed = await prisma$1.paymentIntent.update({
+        const failed = await prisma.paymentIntent.update({
           where: { id: created.id },
           data: {
             status: "FAILED",
@@ -9590,21 +9575,29 @@ function verifyScbCallbackSignature(secret, rawBody, incoming) {
 }
 
 const queueNames = {
-  callback: "callback-queue",
-  webhook: "webhook-queue",
-  reconcile: "reconcile-queue",
-  async: "async-queue"
+  callback: "payiq-callback",
+  webhook: "payiq-webhook",
+  webhookInbound: "payiq-webhook-inbound",
+  reconcile: "payiq-reconcile"
 };
-const callbackQueue = new Queue$1(queueNames.callback, { connection: redis });
-new Queue$1(queueNames.webhook, { connection: redis });
-new Queue$1(queueNames.reconcile, { connection: redis });
-new Queue$1(queueNames.async, { connection: redis });
+const callbackQueue = new Queue(queueNames.callback, {
+  connection: redis
+});
+new Queue(queueNames.webhook, {
+  connection: redis
+});
+const webhookInboundQueue = new Queue(queueNames.webhookInbound, {
+  connection: redis
+});
+new Queue(queueNames.reconcile, {
+  connection: redis
+});
 
 async function storeProviderCallback(params) {
   const dedupeKey = `${params.providerCode}:${params.providerTxnId || params.providerReference || sha256(params.rawBody)}`;
   let callback;
   try {
-    callback = await prisma$1.providerCallback.create({
+    callback = await prisma.providerCallback.create({
       data: {
         providerCode: params.providerCode,
         callbackType: "PAYMENT_CALLBACK",
@@ -9623,7 +9616,7 @@ async function storeProviderCallback(params) {
     return { duplicate: true };
   }
   await callbackQueue.add("provider.callback.process", { providerCallbackId: callback.id }, { jobId: `pcb_${callback.id}_${nanoid(6)}`, removeOnComplete: 1e3, removeOnFail: 1e3 });
-  await prisma$1.providerCallback.update({
+  await prisma.providerCallback.update({
     where: { id: callback.id },
     data: { processStatus: "QUEUED", queuedAt: /* @__PURE__ */ new Date() }
   });
@@ -9695,47 +9688,6 @@ function getSecrets(_merchantId) {
   return (process.env.WEBHOOK_SECRET || "").split(",").map((s) => s.trim()).filter(Boolean);
 }
 
-const { Queue } = BullMQ;
-const redisUrl = process.env.REDIS_URL || "redis://localhost:6379";
-const webhookQueueName = "webhook-queue";
-function createRedisConnection() {
-  return new IORedis(redisUrl, {
-    maxRetriesPerRequest: null,
-    enableReadyCheck: false
-  });
-}
-function createWebhookQueue() {
-  return new Queue(webhookQueueName, {
-    connection: createRedisConnection(),
-    defaultJobOptions: {
-      attempts: Number(process.env.WEBHOOK_QUEUE_ATTEMPTS || 5),
-      backoff: {
-        type: "exponential",
-        delay: Number(process.env.WEBHOOK_QUEUE_BACKOFF_MS || 2e3)
-      },
-      removeOnComplete: 1e3,
-      removeOnFail: 1e3
-    }
-  });
-}
-
-function toSafeJobId(input) {
-  return `webhook__${input.provider}__${input.eventId}`;
-}
-async function enqueueWebhookJob(data) {
-  const queue = createWebhookQueue();
-  try {
-    await queue.add("process-webhook", data, {
-      jobId: toSafeJobId({
-        provider: data.provider,
-        eventId: data.eventId
-      })
-    });
-  } finally {
-    await queue.close();
-  }
-}
-
 function getErrorMessage(error) {
   if (error instanceof Error) return error.message;
   return "unknown error";
@@ -9756,7 +9708,7 @@ const _provider__post = defineEventHandler(async (event) => {
     setResponseStatus(event, 400);
     return { error: "missing event id" };
   }
-  const existing = await prisma$1.webhookEvent.findUnique({
+  const existing = await prisma.webhookEvent.findUnique({
     where: {
       provider_eventId: {
         provider,
@@ -9769,14 +9721,14 @@ const _provider__post = defineEventHandler(async (event) => {
     }
   });
   if (existing) {
-    await prisma$1.webhookEvent.update({
+    await prisma.webhookEvent.update({
       where: { id: existing.id },
       data: { status: "DUPLICATE" }
     });
     setResponseStatus(event, 200);
     return { ok: true, duplicate: true };
   }
-  const dbRecord = await prisma$1.webhookEvent.create({
+  const created = await prisma.webhookEvent.create({
     data: {
       provider,
       eventId,
@@ -9800,31 +9752,35 @@ const _provider__post = defineEventHandler(async (event) => {
       timestamp,
       merchantId: merchantId || void 0
     });
-    await prisma$1.webhookEvent.update({
-      where: { id: dbRecord.id },
+    await prisma.webhookEvent.update({
+      where: { id: created.id },
       data: {
         status: "VERIFIED",
         verifiedAt: /* @__PURE__ */ new Date()
       }
     });
-    await enqueueWebhookJob({
-      eventId,
-      provider,
-      rawBody,
-      merchantId: merchantId || void 0,
-      headers: {
-        "x-payiq-signature": signature,
-        "x-payiq-timestamp": timestamp,
-        "x-payiq-event-id": eventId,
-        "x-merchant-id": merchantId || void 0
+    await webhookInboundQueue.add(
+      "provider.webhook.process",
+      {
+        webhookEventId: created.id
+      },
+      {
+        jobId: `webhook__${created.id}`,
+        attempts: 5,
+        backoff: {
+          type: "exponential",
+          delay: 2e3
+        },
+        removeOnComplete: 1e3,
+        removeOnFail: 1e3
       }
-    });
+    );
     setResponseStatus(event, 200);
     return { ok: true };
   } catch (error) {
     const message = getErrorMessage(error);
-    await prisma$1.webhookEvent.update({
-      where: { id: dbRecord.id },
+    await prisma.webhookEvent.update({
+      where: { id: created.id },
       data: {
         status: "FAILED",
         lastError: message

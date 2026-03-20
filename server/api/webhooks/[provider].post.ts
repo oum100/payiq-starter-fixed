@@ -1,35 +1,30 @@
-import {
-  defineEventHandler,
-  getHeader,
-  readRawBody,
-  setResponseStatus,
-} from "h3";
-import { prisma } from "~/server/lib/prisma";
-import { verifyWebhookSignature } from "~/server/utils/webhook/verify";
-import { enqueueWebhookJob } from "~/server/utils/queue/webhook.queue";
+import { defineEventHandler, getHeader, readRawBody, setResponseStatus } from "h3"
+import { prisma } from "~/server/lib/prisma"
+import { verifyWebhookSignature } from "~/server/utils/webhook/verify"
+import { webhookInboundQueue } from "~/server/lib/bullmq"
 
 function getErrorMessage(error: unknown) {
-  if (error instanceof Error) return error.message;
-  return "unknown error";
+  if (error instanceof Error) return error.message
+  return "unknown error"
 }
 
 export default defineEventHandler(async (event) => {
-  const provider = event.context.params?.provider;
+  const provider = event.context.params?.provider
 
   if (!provider) {
-    setResponseStatus(event, 400);
-    return { error: "missing provider" };
+    setResponseStatus(event, 400)
+    return { error: "missing provider" }
   }
 
-  const rawBody = (await readRawBody(event, "utf8")) || "";
-  const signature = getHeader(event, "x-payiq-signature") || "";
-  const timestamp = getHeader(event, "x-payiq-timestamp") || "";
-  const eventId = getHeader(event, "x-payiq-event-id") || "";
-  const merchantId = getHeader(event, "x-merchant-id") || null;
+  const rawBody = (await readRawBody(event, "utf8")) || ""
+  const signature = getHeader(event, "x-payiq-signature") || ""
+  const timestamp = getHeader(event, "x-payiq-timestamp") || ""
+  const eventId = getHeader(event, "x-payiq-event-id") || ""
+  const merchantId = getHeader(event, "x-merchant-id") || null
 
   if (!eventId) {
-    setResponseStatus(event, 400);
-    return { error: "missing event id" };
+    setResponseStatus(event, 400)
+    return { error: "missing event id" }
   }
 
   const existing = await prisma.webhookEvent.findUnique({
@@ -43,19 +38,19 @@ export default defineEventHandler(async (event) => {
       id: true,
       status: true,
     },
-  });
+  })
 
   if (existing) {
     await prisma.webhookEvent.update({
       where: { id: existing.id },
       data: { status: "DUPLICATE" },
-    });
+    })
 
-    setResponseStatus(event, 200);
-    return { ok: true, duplicate: true };
+    setResponseStatus(event, 200)
+    return { ok: true, duplicate: true }
   }
 
-  const dbRecord = await prisma.webhookEvent.create({
+  const created = await prisma.webhookEvent.create({
     data: {
       provider,
       eventId,
@@ -71,7 +66,7 @@ export default defineEventHandler(async (event) => {
     select: {
       id: true,
     },
-  });
+  })
 
   try {
     await verifyWebhookSignature({
@@ -79,43 +74,47 @@ export default defineEventHandler(async (event) => {
       signature,
       timestamp,
       merchantId: merchantId || undefined,
-    });
+    })
 
     await prisma.webhookEvent.update({
-      where: { id: dbRecord.id },
+      where: { id: created.id },
       data: {
         status: "VERIFIED",
         verifiedAt: new Date(),
       },
-    });
+    })
 
-    await enqueueWebhookJob({
-      eventId,
-      provider,
-      rawBody,
-      merchantId: merchantId || undefined,
-      headers: {
-        "x-payiq-signature": signature,
-        "x-payiq-timestamp": timestamp,
-        "x-payiq-event-id": eventId,
-        "x-merchant-id": merchantId || undefined,
+    await webhookInboundQueue.add(
+      "provider.webhook.process",
+      {
+        webhookEventId: created.id,
       },
-    });
+      {
+        jobId: `webhook__${created.id}`,
+        attempts: 5,
+        backoff: {
+          type: "exponential",
+          delay: 2000,
+        },
+        removeOnComplete: 1000,
+        removeOnFail: 1000,
+      },
+    )
 
-    setResponseStatus(event, 200);
-    return { ok: true };
+    setResponseStatus(event, 200)
+    return { ok: true }
   } catch (error) {
-    const message = getErrorMessage(error);
+    const message = getErrorMessage(error)
 
     await prisma.webhookEvent.update({
-      where: { id: dbRecord.id },
+      where: { id: created.id },
       data: {
         status: "FAILED",
         lastError: message,
       },
-    });
+    })
 
-    setResponseStatus(event, 400);
-    return { error: message };
+    setResponseStatus(event, 400)
+    return { error: message }
   }
-});
+})

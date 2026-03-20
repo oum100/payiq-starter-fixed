@@ -8,6 +8,7 @@ import {
 import { prisma } from "~/server/lib/prisma";
 import { verifyWebhookSignature } from "~/server/utils/webhook/verify";
 import { webhookInboundQueue } from "~/server/lib/bullmq";
+import { redis } from "~/server/lib/redis";
 
 function getErrorMessage(error: unknown) {
   if (error instanceof Error) return error.message;
@@ -24,7 +25,6 @@ function getAllowedIps(): string[] {
 function normalizeIp(ip: string | null | undefined): string | null {
   if (!ip) return null;
 
-  // IPv4 mapped IPv6 เช่น ::ffff:127.0.0.1
   if (ip.startsWith("::ffff:")) {
     return ip.slice(7);
   }
@@ -32,16 +32,48 @@ function normalizeIp(ip: string | null | undefined): string | null {
   return ip;
 }
 
-function assertIpAllowed(event: Parameters<typeof defineEventHandler>[0] extends never ? never : any) {
+function assertIpAllowed(event: any) {
   const allowedIps = getAllowedIps();
 
-  // ถ้าไม่ได้ตั้ง allowlist ให้ข้ามสำหรับ dev/test
   if (!allowedIps.length) return;
 
   const requestIp = normalizeIp(getRequestIP(event, { xForwardedFor: true }));
 
   if (!requestIp || !allowedIps.includes(requestIp)) {
     throw new Error("ip not allowed");
+  }
+}
+
+function getWebhookRateLimit(): number {
+  const raw = Number(process.env.WEBHOOK_RATE_LIMIT || 100);
+  if (!Number.isFinite(raw) || raw <= 0) return 100;
+  return Math.floor(raw);
+}
+
+async function assertWebhookRateLimit(event: any, provider: string) {
+  const limit = getWebhookRateLimit();
+  const requestIp =
+    normalizeIp(getRequestIP(event, { xForwardedFor: true })) || "unknown";
+
+  const now = Date.now();
+  const windowMs = 60_000;
+  const windowKey = Math.floor(now / windowMs);
+  const key = `ratelimit:webhook:${provider}:${requestIp}:${windowKey}`;
+
+  const count = await redis.incr(key);
+
+  if (count === 1) {
+    await redis.pexpire(key, windowMs);
+  }
+
+  if (count > limit) {
+    const ttlMs = await redis.pttl(key);
+    const retryAfterSec =
+      ttlMs > 0 ? Math.max(1, Math.ceil(ttlMs / 1000)) : 60;
+
+    const error = new Error("rate limit exceeded");
+    (error as any).retryAfterSec = retryAfterSec;
+    throw error;
   }
 }
 
@@ -107,6 +139,7 @@ export default defineEventHandler(async (event) => {
 
   try {
     assertIpAllowed(event);
+    await assertWebhookRateLimit(event, provider);
 
     await verifyWebhookSignature({
       rawBody,
@@ -144,6 +177,7 @@ export default defineEventHandler(async (event) => {
     return { ok: true };
   } catch (error) {
     const message = getErrorMessage(error);
+    const retryAfterSec = (error as any)?.retryAfterSec;
 
     await prisma.webhookEvent.update({
       where: { id: created.id },
@@ -153,7 +187,18 @@ export default defineEventHandler(async (event) => {
       },
     });
 
-    setResponseStatus(event, message === "ip not allowed" ? 403 : 400);
+    if (retryAfterSec) {
+      event.node.res.setHeader("Retry-After", String(retryAfterSec));
+    }
+
+    if (message === "ip not allowed") {
+      setResponseStatus(event, 403);
+    } else if (message === "rate limit exceeded") {
+      setResponseStatus(event, 429);
+    } else {
+      setResponseStatus(event, 400);
+    }
+
     return { error: message };
   }
 });

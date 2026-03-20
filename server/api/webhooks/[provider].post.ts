@@ -8,8 +8,8 @@ import {
 import { prisma } from "~/server/lib/prisma";
 import { redis } from "~/server/lib/redis";
 import {
-  getRequestContext,
-  setRequestContext,
+  getEventRequestContext,
+  setEventRequestContext,
 } from "~/server/lib/request-context";
 import { logEvent } from "~/server/lib/observability";
 import { webhookInboundQueue } from "~/server/tasks/queues";
@@ -103,9 +103,8 @@ export default defineEventHandler(async (event) => {
     return { error: "missing provider" };
   }
 
-  setRequestContext({
+  setEventRequestContext(event, {
     provider,
-    route: event.path,
   });
 
   const rawBody = (await readRawBody(event, "utf8")) || "";
@@ -158,7 +157,7 @@ export default defineEventHandler(async (event) => {
   });
 
   if (existing) {
-    setRequestContext({
+    setEventRequestContext(event, {
       webhookEventId: existing.id,
     });
 
@@ -200,7 +199,7 @@ export default defineEventHandler(async (event) => {
     },
   });
 
-  setRequestContext({
+  setEventRequestContext(event, {
     webhookEventId: created.id,
   });
 
@@ -242,7 +241,7 @@ export default defineEventHandler(async (event) => {
       },
     });
 
-    const context = getRequestContext();
+    const context = getEventRequestContext(event);
 
     await webhookInboundQueue.add(
       QUEUE_POLICIES.webhookInbound.jobName,

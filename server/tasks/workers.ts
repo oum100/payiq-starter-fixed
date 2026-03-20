@@ -7,6 +7,7 @@ import { reconcilePayment } from "~/server/services/reconcile/reconcilePayment";
 import { handleWebhookInboundJob } from "~/server/services/webhooks/handleWebhookInboundJob";
 import { logger } from "~/server/lib/logger";
 import { NonRetryableJobError } from "~/server/tasks/job-errors";
+import { runWithRequestContext } from "~/server/lib/request-context";
 
 type QueuePolicy = {
   queueName: string;
@@ -211,10 +212,34 @@ function buildWorker(params: {
         event: "job.started",
         queue: queueName,
         job,
+        data: {
+          webhookEventId: job.data?.webhookEventId,
+          paymentIntentId: job.data?.paymentIntentId,
+          traceId: job.data?.meta?.traceId,
+          requestId: job.data?.meta?.requestId,
+          provider: job.data?.meta?.provider,
+          tenantId: job.data?.meta?.tenantId,
+        },
       });
 
       try {
-        await processor(job);
+        await runWithRequestContext(
+          {
+            traceId: job.data?.meta?.traceId,
+            requestId: job.data?.meta?.requestId,
+            provider: job.data?.meta?.provider,
+            tenantId: job.data?.meta?.tenantId,
+            apiKeyPrefix: job.data?.meta?.apiKeyPrefix,
+            webhookEventId: job.data?.webhookEventId,
+            paymentIntentId: job.data?.paymentIntentId,
+            queue: queueName,
+            jobId: String(job.id),
+            jobName: job.name,
+          },
+          async () => {
+            await processor(job);
+          },
+        );
 
         logJobEvent({
           event: "job.completed",

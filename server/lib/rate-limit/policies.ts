@@ -1,13 +1,9 @@
-import type { WindowRateLimitPolicy } from "./types";
+import type { RoutedRateLimitGroup, WindowRateLimitPolicy } from "./types";
 
-type RoutePolicyGroup =
-  | "payments:create"
-  | "apiKeys:list"
-  | "apiKeys:create"
-  | "apiKeys:rotate"
-  | "apiKeys:revoke";
+export type RouteGroup = RoutedRateLimitGroup;
+export type RateLimitPolicy = WindowRateLimitPolicy;
 
-export const RATE_LIMIT_POLICIES: Record<RoutePolicyGroup, WindowRateLimitPolicy[]> = {
+export const RATE_LIMIT_POLICIES: Record<RouteGroup, RateLimitPolicy[]> = {
   "payments:create": [
     {
       routeGroup: "payments:create",
@@ -28,7 +24,6 @@ export const RATE_LIMIT_POLICIES: Record<RoutePolicyGroup, WindowRateLimitPolicy
       windowSec: 60,
     },
   ],
-
   "apiKeys:list": [
     {
       routeGroup: "apiKeys:list",
@@ -49,7 +44,6 @@ export const RATE_LIMIT_POLICIES: Record<RoutePolicyGroup, WindowRateLimitPolicy
       windowSec: 60,
     },
   ],
-
   "apiKeys:create": [
     {
       routeGroup: "apiKeys:create",
@@ -70,7 +64,6 @@ export const RATE_LIMIT_POLICIES: Record<RoutePolicyGroup, WindowRateLimitPolicy
       windowSec: 60,
     },
   ],
-
   "apiKeys:rotate": [
     {
       routeGroup: "apiKeys:rotate",
@@ -91,7 +84,6 @@ export const RATE_LIMIT_POLICIES: Record<RoutePolicyGroup, WindowRateLimitPolicy
       windowSec: 60,
     },
   ],
-
   "apiKeys:revoke": [
     {
       routeGroup: "apiKeys:revoke",

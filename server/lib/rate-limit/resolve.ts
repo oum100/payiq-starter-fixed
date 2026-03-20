@@ -1,5 +1,5 @@
 import type { H3Event } from "h3";
-import { RATE_LIMIT_POLICIES } from "./policies";
+import { RATE_LIMIT_POLICIES, type RouteGroup } from "./policies";
 import { windowPolicyToCheckPolicyInput, type CheckPolicyInput } from "./types";
 
 type ResolveInput = {
@@ -7,14 +7,7 @@ type ResolveInput = {
   merchantAccountId?: string | null;
 };
 
-type ResolvedRouteGroup =
-  | "payments:create"
-  | "apiKeys:list"
-  | "apiKeys:create"
-  | "apiKeys:rotate"
-  | "apiKeys:revoke";
-
-function resolveRouteGroup(event: H3Event): ResolvedRouteGroup | null {
+function resolveRouteGroup(event: H3Event): RouteGroup | null {
   const path = event.path || "";
 
   if (event.method === "POST" && path === "/api/v1/payment-intents") {
@@ -58,11 +51,7 @@ export function resolveRateLimitPolicies(
 
   for (const def of defs) {
     if (def.scope === "global") {
-      items.push(
-        windowPolicyToCheckPolicyInput(def, {
-          identifier: "global",
-        }),
-      );
+      items.push(windowPolicyToCheckPolicyInput(def, { identifier: "global" }));
       continue;
     }
 

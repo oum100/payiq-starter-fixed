@@ -41,7 +41,7 @@ mock.module("~/server/lib/rate-limit/resolve", () => ({
       identifier: "ak_1",
       routeGroup: "payments:create",
       capacity: 60,
-      refillRatePerSec: 60 / 60,
+      refillRatePerSec: 1,
       cost: 1,
       ttlSec: 60,
       blockDurationSec: 0,
@@ -82,7 +82,7 @@ describe("20.rate-limit middleware", () => {
       .mockResolvedValueOnce({
         allowed: true,
         remaining: 199,
-        retryAfterSec: 60,
+        retryAfterSec: 0,
         resetAfterSec: 60,
         blocked: false,
         blockRemainingSec: 0,
@@ -90,7 +90,7 @@ describe("20.rate-limit middleware", () => {
       .mockResolvedValueOnce({
         allowed: true,
         remaining: 119,
-        retryAfterSec: 60,
+        retryAfterSec: 0,
         resetAfterSec: 60,
         blocked: false,
         blockRemainingSec: 0,
@@ -98,14 +98,13 @@ describe("20.rate-limit middleware", () => {
       .mockResolvedValueOnce({
         allowed: true,
         remaining: 59,
-        retryAfterSec: 60,
+        retryAfterSec: 0,
         resetAfterSec: 60,
         blocked: false,
         blockRemainingSec: 0,
       });
 
     const event = makeEvent();
-
     await handler(event);
 
     expect(event.__headers["X-RateLimit-Limit"]).toBe("60");
@@ -118,7 +117,7 @@ describe("20.rate-limit middleware", () => {
       .mockResolvedValueOnce({
         allowed: true,
         remaining: 199,
-        retryAfterSec: 60,
+        retryAfterSec: 0,
         resetAfterSec: 60,
         blocked: false,
         blockRemainingSec: 0,
@@ -126,7 +125,7 @@ describe("20.rate-limit middleware", () => {
       .mockResolvedValueOnce({
         allowed: true,
         remaining: 119,
-        retryAfterSec: 60,
+        retryAfterSec: 0,
         resetAfterSec: 60,
         blocked: false,
         blockRemainingSec: 0,

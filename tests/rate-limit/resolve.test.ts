@@ -66,13 +66,10 @@ describe("resolveRateLimitPolicies", () => {
   });
 
   it("resolves api-keys list policies", () => {
-    const result = resolveRateLimitPolicies(
-      makeEvent("GET", "/api/v1/api-keys"),
-      {
-        apiKeyId: "ak_1",
-        merchantAccountId: "ma_1",
-      },
-    );
+    const result = resolveRateLimitPolicies(makeEvent("GET", "/api/v1/api-keys"), {
+      apiKeyId: "ak_1",
+      merchantAccountId: "ma_1",
+    });
 
     expect(result).toHaveLength(3);
     expect(result.map((x) => x.routeGroup)).toEqual([

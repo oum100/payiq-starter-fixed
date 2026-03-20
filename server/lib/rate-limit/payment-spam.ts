@@ -14,7 +14,7 @@ interface PaymentSpamInput {
 export async function checkPaymentSpamOrThrow(
   event: H3Event,
   input: PaymentSpamInput,
-) {
+): Promise<void> {
   const ipHash = getClientIpHash(event);
 
   const blockedKey = buildTempBlockKey(
@@ -55,18 +55,11 @@ export async function checkPaymentSpamOrThrow(
 
   const multi = redis.multi();
   multi.incr(duplicateRefKey);
-  multi.expire(
-    duplicateRefKey,
-    PAYMENT_SPAM_LIMITS.duplicateReference.ttlSec,
-  );
+  multi.expire(duplicateRefKey, PAYMENT_SPAM_LIMITS.duplicateReference.ttlSec);
   multi.incr(velocityKey);
-  multi.expire(
-    velocityKey,
-    PAYMENT_SPAM_LIMITS.amountVelocity.ttlSec,
-  );
+  multi.expire(velocityKey, PAYMENT_SPAM_LIMITS.amountVelocity.ttlSec);
 
   const results = await multi.exec();
-
   const duplicateCount = Number(results?.[0]?.[1] ?? 0);
   const velocityCount = Number(results?.[2]?.[1] ?? 0);
 

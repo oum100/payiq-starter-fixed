@@ -5,17 +5,21 @@ export type RateLimitScope =
   | "merchant"
   | "ip";
 
-export type RouteGroup =
+export type RoutedRateLimitGroup =
   | "payments:create"
-  | "payments:read"
   | "apiKeys:list"
   | "apiKeys:create"
   | "apiKeys:rotate"
-  | "apiKeys:revoke"
+  | "apiKeys:revoke";
+
+export type AbuseRouteGroup =
+  | "payments:read"
   | "apiKeys:manage"
   | "auth:malformed"
   | "auth:unknown"
   | "auth:failed";
+
+export type RouteGroup = RoutedRateLimitGroup | AbuseRouteGroup;
 
 export interface TokenBucketPolicy {
   capacity: number;
@@ -34,7 +38,7 @@ export interface NormalizedTokenBucketPolicy {
 }
 
 export interface WindowRateLimitPolicy {
-  routeGroup: RouteGroup;
+  routeGroup: RoutedRateLimitGroup;
   scope: Extract<RateLimitScope, "global" | "tenant" | "apiKey">;
   capacity: number;
   windowSec: number;
@@ -47,11 +51,9 @@ export interface RateLimitSubject {
 export interface CheckPolicyInput {
   key: string;
   windowSec: number;
-
   scope: RateLimitScope;
   identifier: string;
   routeGroup: RouteGroup;
-
   capacity: number;
   refillRatePerSec: number;
   cost: number;
@@ -89,7 +91,7 @@ export function buildRateLimitKey(
   scope: RateLimitScope,
   identifier: string,
   routeGroup: RouteGroup,
-) {
+): string {
   return `rl:tb:v2:${scope}:${identifier}:${routeGroup}`;
 }
 
@@ -104,11 +106,9 @@ export function toCheckPolicyInput(
   return {
     key: buildRateLimitKey(scope, subject.identifier, routeGroup),
     windowSec: normalized.ttlSec,
-
     scope,
     identifier: subject.identifier,
     routeGroup,
-
     capacity: normalized.capacity,
     refillRatePerSec: normalized.refillRatePerSec,
     cost: normalized.cost,
@@ -127,11 +127,9 @@ export function windowPolicyToCheckPolicyInput(
   return {
     key: buildRateLimitKey(policy.scope, subject.identifier, policy.routeGroup),
     windowSec: policy.windowSec,
-
     scope: policy.scope,
     identifier: subject.identifier,
     routeGroup: policy.routeGroup,
-
     capacity: policy.capacity,
     refillRatePerSec,
     cost: 1,

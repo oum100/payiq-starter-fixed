@@ -1,21 +1,32 @@
 import type { H3Event } from "h3";
-import { ROUTE_LIMITS, MERCHANT_LIMITS } from "./config";
-import type { ResolvedRateLimitPolicy, RouteGroup } from "./types";
+import { RATE_LIMIT_POLICIES, type RateLimitPolicy, type RouteGroup } from "./policies";
 
-function detectRouteGroup(event: H3Event): RouteGroup | null {
-  const method = event.method.toUpperCase();
-  const path = event.path;
+type ResolveInput = {
+  apiKeyId?: string | null;
+  merchantAccountId?: string | null;
+};
 
-  if (method === "POST" && path.startsWith("/api/v1/payment-intents")) {
+function resolveRouteGroup(event: H3Event): RouteGroup | null {
+  const path = event.path || "";
+
+  if (event.method === "POST" && path === "/api/v1/payment-intents") {
     return "payments:create";
   }
 
-  if (method === "GET" && path.startsWith("/api/v1/payment-intents/")) {
-    return "payments:read";
+  if (event.method === "GET" && path === "/api/v1/api-keys") {
+    return "apiKeys:list";
   }
 
-  if (path.startsWith("/api/v1/api-keys")) {
-    return "apiKeys:manage";
+  if (event.method === "POST" && path === "/api/v1/api-keys") {
+    return "apiKeys:create";
+  }
+
+  if (event.method === "POST" && /\/api\/v1\/api-keys\/[^/]+\/rotate$/.test(path)) {
+    return "apiKeys:rotate";
+  }
+
+  if (event.method === "POST" && /\/api\/v1\/api-keys\/[^/]+\/revoke$/.test(path)) {
+    return "apiKeys:revoke";
   }
 
   return null;
@@ -23,47 +34,38 @@ function detectRouteGroup(event: H3Event): RouteGroup | null {
 
 export function resolveRateLimitPolicies(
   event: H3Event,
-  input: {
-    apiKeyId: string;
-    merchantAccountId?: string | null;
-  },
-): ResolvedRateLimitPolicy[] {
-  const routeGroup = detectRouteGroup(event);
+  input: ResolveInput,
+): Array<RateLimitPolicy & { key: string }> {
+  const routeGroup = resolveRouteGroup(event);
   if (!routeGroup) return [];
 
-  const base = ROUTE_LIMITS[routeGroup];
+  const defs = RATE_LIMIT_POLICIES[routeGroup] ?? [];
+  const items: Array<RateLimitPolicy & { key: string }> = [];
 
-  const policies: ResolvedRateLimitPolicy[] = [
-    {
-      scope: "apiKey",
-      identifier: input.apiKeyId,
-      routeGroup,
-      capacity: base.capacity,
-      refillRatePerSec: base.refillRatePerSec,
-      cost: base.cost ?? 1,
-      ttlSec: base.ttlSec ?? 300,
-      blockDurationSec: base.blockDurationSec ?? 0,
-    },
-  ];
+  for (const def of defs) {
+    if (def.scope === "global") {
+      items.push({
+        ...def,
+        key: `ratelimit:${routeGroup}:global`,
+      });
+      continue;
+    }
 
-  if (
-    routeGroup === "payments:create" &&
-    input.merchantAccountId &&
-    MERCHANT_LIMITS["payments:create"]
-  ) {
-    const merchantBase = MERCHANT_LIMITS["payments:create"];
+    if (def.scope === "tenant" && input.merchantAccountId) {
+      items.push({
+        ...def,
+        key: `ratelimit:${routeGroup}:tenant:${input.merchantAccountId}`,
+      });
+      continue;
+    }
 
-    policies.push({
-      scope: "merchant",
-      identifier: input.merchantAccountId,
-      routeGroup,
-      capacity: merchantBase.capacity,
-      refillRatePerSec: merchantBase.refillRatePerSec,
-      cost: merchantBase.cost,
-      ttlSec: merchantBase.ttlSec,
-      blockDurationSec: merchantBase.blockDurationSec,
-    });
+    if (def.scope === "apiKey" && input.apiKeyId) {
+      items.push({
+        ...def,
+        key: `ratelimit:${routeGroup}:apiKey:${input.apiKeyId}`,
+      });
+    }
   }
 
-  return policies;
+  return items;
 }

@@ -1,73 +1,46 @@
 import { redis } from "../redis";
-import { buildRateLimitKey, buildTempBlockKey } from "./keys";
-import { TOKEN_BUCKET_LUA } from "./script";
-import type { RateLimitDecision, ResolvedRateLimitPolicy } from "./types";
 
-let tokenBucketSha: string | null = null;
+type CheckPolicyInput = {
+  key: string;
+  capacity: number;
+  windowSec: number;
+  scope: "global" | "tenant" | "apiKey";
+  routeGroup: string;
+};
 
-async function getTokenBucketSha(): Promise<string> {
-  if (tokenBucketSha) return tokenBucketSha;
-  tokenBucketSha = (await redis.script("LOAD", TOKEN_BUCKET_LUA)) as string;
-  return tokenBucketSha;
-}
+type CheckDecision = {
+  allowed: boolean;
+  remaining: number;
+  retryAfterSec: string;
+  resetAfterSec: number;
+};
 
-export class RateLimitService {
-  async check(policy: ResolvedRateLimitPolicy): Promise<RateLimitDecision> {
-    const key = buildRateLimitKey(
-      policy.scope,
-      policy.identifier,
-      policy.routeGroup,
-    );
+export const rateLimitService = {
+  async check(policy: CheckPolicyInput): Promise<CheckDecision> {
+    const multi = redis.multi();
+    multi.incr(policy.key);
+    multi.ttl(policy.key);
+    multi.expire(policy.key, policy.windowSec);
 
-    const nowMs = Date.now();
-    const sha = await getTokenBucketSha();
+    const results = await multi.exec();
 
-    let raw: unknown[];
+    const count = Number(results?.[0]?.[1] ?? 0);
+    let ttl = Number(results?.[1]?.[1] ?? -1);
 
-    try {
-      raw = (await redis.evalsha(
-        sha,
-        1,
-        key,
-        nowMs,
-        policy.capacity,
-        policy.refillRatePerSec,
-        policy.cost,
-        policy.ttlSec,
-        policy.blockDurationSec,
-      )) as unknown[];
-    } catch {
-      raw = (await redis.eval(
-        TOKEN_BUCKET_LUA,
-        1,
-        key,
-        nowMs,
-        policy.capacity,
-        policy.refillRatePerSec,
-        policy.cost,
-        policy.ttlSec,
-        policy.blockDurationSec,
-      )) as unknown[];
+    if (ttl < 0) {
+      ttl = policy.windowSec;
     }
 
+    const allowed = count <= policy.capacity;
+    const remaining = Math.max(0, policy.capacity - count);
+    const retryAfterSec = String(Math.max(1, ttl));
+    const resetAfterSec = Math.max(1, ttl);
+
     return {
-      allowed: Number(raw[0]) === 1,
-      remaining: Number(raw[1]),
-      retryAfterSec: Number(raw[2]),
-      resetAfterSec: Number(raw[3]),
-      blocked: Number(raw[4]) === 1,
-      blockRemainingSec: Number(raw[5]),
+      allowed,
+      remaining,
+      retryAfterSec,
+      resetAfterSec,
     };
-  }
-
-  async setTempBlock(subject: string, identifier: string, ttlSec: number) {
-    await redis.set(buildTempBlockKey(subject, identifier), "1", "EX", ttlSec);
-  }
-
-  async getTempBlockTtl(subject: string, identifier: string) {
-    const ttl = await redis.ttl(buildTempBlockKey(subject, identifier));
-    return ttl > 0 ? ttl : 0;
-  }
-}
-
-export const rateLimitService = new RateLimitService();
+  },
+};

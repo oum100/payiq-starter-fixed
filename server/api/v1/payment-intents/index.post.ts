@@ -3,6 +3,7 @@ import { createPaymentIntent } from "~/server/services/payments/createPaymentInt
 import { AppError } from "~/server/lib/errors";
 import { requireScope } from "~/server/services/auth/requireScope";
 import { checkPaymentSpamOrThrow } from "~/server/lib/rate-limit/payment-spam";
+import { requireApiKeyAuth } from "~/server/lib/auth";
 
 const schema = z.object({
   merchantOrderId: z.string().optional(),
@@ -31,15 +32,7 @@ function getMerchantAccountId(auth: any): string | null {
 
 export default defineEventHandler(async (event) => {
   try {
-    const auth = event.context.auth;
-    if (!auth) {
-      throw createError({
-        statusCode: 401,
-        statusMessage: "Unauthorized",
-        data: { code: "AUTH_CONTEXT_MISSING" },
-      });
-    }
-
+    const auth = await requireApiKeyAuth(event);
     requireScope(auth, "payments:create");
 
     const body = schema.parse(await readBody(event));

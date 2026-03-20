@@ -26,7 +26,8 @@ describe("webhook.worker logic", () => {
     processWebhookMock.mockResolvedValue({ ok: true });
     prismaMock.webhookEvent.updateMany.mockResolvedValue({ count: 1 });
 
-    const { processWebhook } = await import("~/server/utils/queue/webhook.processor");
+    const { processWebhook } =
+      await import("~/server/utils/queue/webhook.processor");
     const { prisma } = await import("~/server/lib/prisma");
 
     const job = {
@@ -59,7 +60,8 @@ describe("webhook.worker logic", () => {
     processWebhookMock.mockRejectedValue(new Error("processor failed"));
     prismaMock.webhookEvent.updateMany.mockResolvedValue({ count: 1 });
 
-    const { processWebhook } = await import("~/server/utils/queue/webhook.processor");
+    const { processWebhook } =
+      await import("~/server/utils/queue/webhook.processor");
     const { prisma } = await import("~/server/lib/prisma");
 
     const job = {
@@ -91,8 +93,8 @@ describe("webhook.worker logic", () => {
 
     expect(processWebhookMock).toHaveBeenCalledTimes(1);
     expect(prismaMock.webhookEvent.updateMany).toHaveBeenCalledTimes(1);
-    expect(prismaMock.webhookEvent.updateMany.mock.calls[0][0].data.status).toBe(
-      "FAILED",
-    );
+    const firstCall = prismaMock.webhookEvent.updateMany.mock.calls[0];
+    expect(firstCall).toBeDefined();
+    expect(firstCall?.[0]?.data?.status).toBe("FAILED");
   });
 });

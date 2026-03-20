@@ -11,25 +11,40 @@ mock.module("~/server/lib/rate-limit/service", () => ({
 mock.module("~/server/lib/rate-limit/resolve", () => ({
   resolveRateLimitPolicies: mock(() => [
     {
-      routeGroup: "payments:create",
+      key: "rl:tb:v2:global:global:payments:create",
+      windowSec: 60,
       scope: "global",
+      identifier: "global",
+      routeGroup: "payments:create",
       capacity: 200,
-      windowSec: 60,
-      key: "ratelimit:payments:create:global",
+      refillRatePerSec: 200 / 60,
+      cost: 1,
+      ttlSec: 60,
+      blockDurationSec: 0,
     },
     {
-      routeGroup: "payments:create",
+      key: "rl:tb:v2:tenant:ma_1:payments:create",
+      windowSec: 60,
       scope: "tenant",
+      identifier: "ma_1",
+      routeGroup: "payments:create",
       capacity: 120,
-      windowSec: 60,
-      key: "ratelimit:payments:create:tenant:ma_1",
+      refillRatePerSec: 120 / 60,
+      cost: 1,
+      ttlSec: 60,
+      blockDurationSec: 0,
     },
     {
-      routeGroup: "payments:create",
-      scope: "apiKey",
-      capacity: 60,
+      key: "rl:tb:v2:apiKey:ak_1:payments:create",
       windowSec: 60,
-      key: "ratelimit:payments:create:apiKey:ak_1",
+      scope: "apiKey",
+      identifier: "ak_1",
+      routeGroup: "payments:create",
+      capacity: 60,
+      refillRatePerSec: 60 / 60,
+      cost: 1,
+      ttlSec: 60,
+      blockDurationSec: 0,
     },
   ]),
 }));
@@ -38,6 +53,7 @@ const handler = (await import("~/server/middleware/20.rate-limit")).default;
 
 function makeEvent() {
   const headers: Record<string, string> = {};
+
   return {
     context: {
       auth: {
@@ -47,8 +63,8 @@ function makeEvent() {
     },
     node: {
       res: {
-        setHeader: (name: string, value: string) => {
-          headers[name] = value;
+        setHeader: (name: string, value: string | number) => {
+          headers[name] = String(value);
         },
       },
     },
@@ -66,20 +82,26 @@ describe("20.rate-limit middleware", () => {
       .mockResolvedValueOnce({
         allowed: true,
         remaining: 199,
-        retryAfterSec: "60",
+        retryAfterSec: 60,
         resetAfterSec: 60,
+        blocked: false,
+        blockRemainingSec: 0,
       })
       .mockResolvedValueOnce({
         allowed: true,
         remaining: 119,
-        retryAfterSec: "60",
+        retryAfterSec: 60,
         resetAfterSec: 60,
+        blocked: false,
+        blockRemainingSec: 0,
       })
       .mockResolvedValueOnce({
         allowed: true,
         remaining: 59,
-        retryAfterSec: "60",
+        retryAfterSec: 60,
         resetAfterSec: 60,
+        blocked: false,
+        blockRemainingSec: 0,
       });
 
     const event = makeEvent();
@@ -96,20 +118,26 @@ describe("20.rate-limit middleware", () => {
       .mockResolvedValueOnce({
         allowed: true,
         remaining: 199,
-        retryAfterSec: "60",
+        retryAfterSec: 60,
         resetAfterSec: 60,
+        blocked: false,
+        blockRemainingSec: 0,
       })
       .mockResolvedValueOnce({
         allowed: true,
         remaining: 119,
-        retryAfterSec: "60",
+        retryAfterSec: 60,
         resetAfterSec: 60,
+        blocked: false,
+        blockRemainingSec: 0,
       })
       .mockResolvedValueOnce({
         allowed: false,
         remaining: 0,
-        retryAfterSec: "30",
+        retryAfterSec: 30,
         resetAfterSec: 30,
+        blocked: true,
+        blockRemainingSec: 30,
       });
 
     const event = makeEvent();
@@ -117,6 +145,14 @@ describe("20.rate-limit middleware", () => {
     await expect(handler(event)).rejects.toMatchObject({
       statusCode: 429,
       statusMessage: "Too Many Requests",
+      data: {
+        code: "RATE_LIMIT_EXCEEDED",
+        routeGroup: "payments:create",
+        scope: "apiKey",
+        retryAfterSec: 30,
+        blocked: true,
+        blockRemainingSec: 30,
+      },
     });
 
     expect(event.__headers["Retry-After"]).toBe("30");

@@ -1,12 +1,20 @@
 import type { H3Event } from "h3";
-import { RATE_LIMIT_POLICIES, type RateLimitPolicy, type RouteGroup } from "./policies";
+import { RATE_LIMIT_POLICIES } from "./policies";
+import { windowPolicyToCheckPolicyInput, type CheckPolicyInput } from "./types";
 
 type ResolveInput = {
   apiKeyId?: string | null;
   merchantAccountId?: string | null;
 };
 
-function resolveRouteGroup(event: H3Event): RouteGroup | null {
+type ResolvedRouteGroup =
+  | "payments:create"
+  | "apiKeys:list"
+  | "apiKeys:create"
+  | "apiKeys:rotate"
+  | "apiKeys:revoke";
+
+function resolveRouteGroup(event: H3Event): ResolvedRouteGroup | null {
   const path = event.path || "";
 
   if (event.method === "POST" && path === "/api/v1/payment-intents") {
@@ -21,11 +29,17 @@ function resolveRouteGroup(event: H3Event): RouteGroup | null {
     return "apiKeys:create";
   }
 
-  if (event.method === "POST" && /\/api\/v1\/api-keys\/[^/]+\/rotate$/.test(path)) {
+  if (
+    event.method === "POST" &&
+    /\/api\/v1\/api-keys\/[^/]+\/rotate$/.test(path)
+  ) {
     return "apiKeys:rotate";
   }
 
-  if (event.method === "POST" && /\/api\/v1\/api-keys\/[^/]+\/revoke$/.test(path)) {
+  if (
+    event.method === "POST" &&
+    /\/api\/v1\/api-keys\/[^/]+\/revoke$/.test(path)
+  ) {
     return "apiKeys:revoke";
   }
 
@@ -35,35 +49,38 @@ function resolveRouteGroup(event: H3Event): RouteGroup | null {
 export function resolveRateLimitPolicies(
   event: H3Event,
   input: ResolveInput,
-): Array<RateLimitPolicy & { key: string }> {
+): CheckPolicyInput[] {
   const routeGroup = resolveRouteGroup(event);
   if (!routeGroup) return [];
 
   const defs = RATE_LIMIT_POLICIES[routeGroup] ?? [];
-  const items: Array<RateLimitPolicy & { key: string }> = [];
+  const items: CheckPolicyInput[] = [];
 
   for (const def of defs) {
     if (def.scope === "global") {
-      items.push({
-        ...def,
-        key: `ratelimit:${routeGroup}:global`,
-      });
+      items.push(
+        windowPolicyToCheckPolicyInput(def, {
+          identifier: "global",
+        }),
+      );
       continue;
     }
 
     if (def.scope === "tenant" && input.merchantAccountId) {
-      items.push({
-        ...def,
-        key: `ratelimit:${routeGroup}:tenant:${input.merchantAccountId}`,
-      });
+      items.push(
+        windowPolicyToCheckPolicyInput(def, {
+          identifier: input.merchantAccountId,
+        }),
+      );
       continue;
     }
 
     if (def.scope === "apiKey" && input.apiKeyId) {
-      items.push({
-        ...def,
-        key: `ratelimit:${routeGroup}:apiKey:${input.apiKeyId}`,
-      });
+      items.push(
+        windowPolicyToCheckPolicyInput(def, {
+          identifier: input.apiKeyId,
+        }),
+      );
     }
   }
 

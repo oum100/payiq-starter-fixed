@@ -1,15 +1,11 @@
 import { createError, setResponseHeader, type H3Event } from "h3";
 import { redis } from "../redis";
 import { PAYMENT_SPAM_LIMITS } from "./config";
-import {
-  buildPaymentSpamKey,
-  buildTempBlockKey,
-} from "./keys";
+import { buildPaymentSpamKey, buildTempBlockKey } from "./keys";
 import { getClientIpHash, sha256 } from "./request";
 
 interface PaymentSpamInput {
   merchantAccountId: string;
-  apiKeyId: string;
   amount: string;
   currency: string;
   reference?: string | null;
@@ -28,7 +24,7 @@ export async function checkPaymentSpamOrThrow(
 
   const blockedTtl = await redis.ttl(blockedKey);
   if (blockedTtl > 0) {
-    setResponseHeader(event, "Retry-After", String(blockedTtl));
+    setResponseHeader(event, "Retry-After", blockedTtl);
 
     throw createError({
       statusCode: 429,
@@ -85,7 +81,7 @@ export async function checkPaymentSpamOrThrow(
     setResponseHeader(
       event,
       "Retry-After",
-      String(PAYMENT_SPAM_LIMITS.duplicateReference.blockSec),
+      PAYMENT_SPAM_LIMITS.duplicateReference.blockSec,
     );
 
     throw createError({
@@ -109,7 +105,7 @@ export async function checkPaymentSpamOrThrow(
     setResponseHeader(
       event,
       "Retry-After",
-      String(PAYMENT_SPAM_LIMITS.amountVelocity.blockSec),
+      PAYMENT_SPAM_LIMITS.amountVelocity.blockSec,
     );
 
     throw createError({

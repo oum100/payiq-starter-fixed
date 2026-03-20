@@ -1,43 +1,58 @@
-import { createError, defineEventHandler, setResponseHeader } from "h3";
+import {
+  createError,
+  defineEventHandler,
+  setResponseHeader,
+  type H3Event,
+} from "h3";
 import { requireApiKeyAuth } from "~/server/lib/auth";
 import { getClientIpHash } from "~/server/lib/rate-limit/request";
 import { rateLimitService } from "~/server/lib/rate-limit/service";
 import { ROUTE_LIMITS } from "~/server/lib/rate-limit/config";
-import type { ResolvedRateLimitPolicy } from "~/server/lib/rate-limit/types";
+import {
+  toCheckPolicyInput,
+  type CheckPolicyInput,
+  type RateLimitDecision,
+} from "~/server/lib/rate-limit/types";
+
+type AuthAbuseRouteGroup =
+  | "auth:malformed"
+  | "auth:unknown"
+  | "auth:failed";
 
 function isProtectedPath(path: string) {
   if (path === "/api/v1/health") return false;
   return path.startsWith("/api/v1/");
 }
 
-function buildAuthPolicy(
-  routeGroup: "auth:malformed" | "auth:unknown" | "auth:failed",
+function buildAuthCheckInput(
+  routeGroup: AuthAbuseRouteGroup,
   ipHash: string,
-): ResolvedRateLimitPolicy {
+): CheckPolicyInput {
   const base = ROUTE_LIMITS[routeGroup];
 
-  return {
-    scope: "ip",
-    identifier: ipHash,
+  return toCheckPolicyInput(
     routeGroup,
-    capacity: base.capacity,
-    refillRatePerSec: base.refillRatePerSec,
-    cost: base.cost ?? 1,
-    ttlSec: base.ttlSec ?? 3600,
-    blockDurationSec: base.blockDurationSec ?? 0,
-  };
+    "ip",
+    { identifier: ipHash },
+    {
+      capacity: base.capacity,
+      refillRatePerSec: base.refillRatePerSec,
+      cost: base.cost,
+      ttlSec: base.ttlSec,
+      blockDurationSec: base.blockDurationSec,
+    },
+  );
 }
 
 async function denyWithAbuseControl(
-  event: Parameters<typeof defineEventHandler>[0] extends (e: infer E) => any
-    ? E
-    : never,
-  routeGroup: "auth:malformed" | "auth:unknown" | "auth:failed",
+  event: H3Event,
+  routeGroup: AuthAbuseRouteGroup,
   message: string,
 ) {
   const ipHash = getClientIpHash(event);
-  const decision = await rateLimitService.check(
-    buildAuthPolicy(routeGroup, ipHash),
+
+  const decision: RateLimitDecision = await rateLimitService.check(
+    buildAuthCheckInput(routeGroup, ipHash),
   );
 
   if (!decision.allowed) {
@@ -50,6 +65,9 @@ async function denyWithAbuseControl(
         code: "AUTH_RATE_LIMITED",
         routeGroup,
         retryAfterSec: decision.retryAfterSec,
+        blocked: decision.blocked,
+        blockRemainingSec: decision.blockRemainingSec,
+        resetAfterSec: decision.resetAfterSec,
       },
     });
   }
@@ -68,8 +86,10 @@ export default defineEventHandler(async (event) => {
 
   try {
     await requireApiKeyAuth(event);
-  } catch (error: any) {
-    const message = String(error?.message || "");
+  } catch (error: unknown) {
+    const message = String(
+      error instanceof Error ? error.message : error ?? "",
+    );
 
     if (message.includes("Malformed API key")) {
       await denyWithAbuseControl(event, "auth:malformed", "MALFORMED_API_KEY");

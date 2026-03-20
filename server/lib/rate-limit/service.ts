@@ -1,46 +1,42 @@
 import { redis } from "../redis";
+import { TOKEN_BUCKET_LUA } from "./script";
+import type { CheckPolicyInput, RateLimitDecision } from "./types";
 
-type CheckPolicyInput = {
-  key: string;
-  capacity: number;
-  windowSec: number;
-  scope: "global" | "tenant" | "apiKey";
-  routeGroup: string;
-};
-
-type CheckDecision = {
-  allowed: boolean;
-  remaining: number;
-  retryAfterSec: string;
-  resetAfterSec: number;
-};
+function toNumber(value: unknown, fallback = 0): number {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : fallback;
+}
 
 export const rateLimitService = {
-  async check(policy: CheckPolicyInput): Promise<CheckDecision> {
-    const multi = redis.multi();
-    multi.incr(policy.key);
-    multi.ttl(policy.key);
-    multi.expire(policy.key, policy.windowSec);
+  async check(input: CheckPolicyInput): Promise<RateLimitDecision> {
+    const nowMs = Date.now();
 
-    const results = await multi.exec();
+    const raw = (await redis.eval(
+      TOKEN_BUCKET_LUA,
+      1,
+      input.key,
+      String(nowMs),
+      String(input.capacity),
+      String(input.refillRatePerSec),
+      String(input.cost),
+      String(input.ttlSec),
+      String(input.blockDurationSec),
+    )) as unknown[];
 
-    const count = Number(results?.[0]?.[1] ?? 0);
-    let ttl = Number(results?.[1]?.[1] ?? -1);
-
-    if (ttl < 0) {
-      ttl = policy.windowSec;
-    }
-
-    const allowed = count <= policy.capacity;
-    const remaining = Math.max(0, policy.capacity - count);
-    const retryAfterSec = String(Math.max(1, ttl));
-    const resetAfterSec = Math.max(1, ttl);
+    const allowed = toNumber(raw?.[0], 0) === 1;
+    const remaining = Math.max(0, toNumber(raw?.[1], 0));
+    const retryAfterSec = Math.max(0, toNumber(raw?.[2], 0));
+    const resetAfterSec = Math.max(0, toNumber(raw?.[3], 0));
+    const blocked = toNumber(raw?.[4], 0) === 1;
+    const blockRemainingSec = Math.max(0, toNumber(raw?.[5], 0));
 
     return {
       allowed,
       remaining,
       retryAfterSec,
       resetAfterSec,
+      blocked,
+      blockRemainingSec,
     };
   },
 };

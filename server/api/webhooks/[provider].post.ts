@@ -7,8 +7,11 @@ import {
 } from "h3";
 import { prisma } from "~/server/lib/prisma";
 import { verifyWebhookSignature } from "~/server/utils/webhook/verify";
-import { webhookInboundQueue } from "~/server/lib/bullmq";
+// import { webhookInboundQueue } from "~/server/lib/bullmq";
 import { redis } from "~/server/lib/redis";
+
+import { webhookInboundQueue } from "~/server/tasks/queues";
+import { QUEUE_POLICIES } from "~/server/tasks/queue-policy";
 
 function getErrorMessage(error: unknown) {
   if (error instanceof Error) return error.message;
@@ -155,20 +158,36 @@ export default defineEventHandler(async (event) => {
       },
     });
 
+    // await webhookInboundQueue.add(
+    //   "provider.webhook.process",
+    //   {
+    //     webhookEventId: created.id,
+    //   },
+    //   {
+    //     jobId: `webhook__${created.id}`,
+    //     attempts: 5,
+    //     backoff: {
+    //       type: "exponential",
+    //       delay: 2000,
+    //     },
+    //     removeOnComplete: 1000,
+    //     removeOnFail: 1000,
+    //   },
+    // );
     await webhookInboundQueue.add(
-      "provider.webhook.process",
+      QUEUE_POLICIES.webhookInbound.jobName,
       {
         webhookEventId: created.id,
       },
       {
         jobId: `webhook__${created.id}`,
-        attempts: 5,
+        attempts: QUEUE_POLICIES.webhookInbound.attempts,
         backoff: {
           type: "exponential",
-          delay: 2000,
+          delay: QUEUE_POLICIES.webhookInbound.backoffDelayMs,
         },
-        removeOnComplete: 1000,
-        removeOnFail: 1000,
+        removeOnComplete: QUEUE_POLICIES.webhookInbound.removeOnComplete,
+        removeOnFail: QUEUE_POLICIES.webhookInbound.removeOnFail,
       },
     );
 

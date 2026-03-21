@@ -16,8 +16,16 @@ mock.module("h3", () => ({
       statusCode?: number;
       statusMessage?: string;
     };
-    err.statusCode = input.statusCode;
-    err.statusMessage = input.statusMessage || input.message;
+
+    if (typeof input.statusCode !== "undefined") {
+      err.statusCode = input.statusCode;
+    }
+
+    const statusMessage = input.statusMessage || input.message;
+    if (typeof statusMessage !== "undefined") {
+      err.statusMessage = statusMessage;
+    }
+
     return err;
   },
 }));

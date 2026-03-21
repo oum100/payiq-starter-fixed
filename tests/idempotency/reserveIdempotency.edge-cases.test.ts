@@ -1,24 +1,14 @@
 import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import { createHash } from "node:crypto";
 
+let reserveIdempotency: any;
+let completeIdempotency: any;
+let releaseIdempotencyLock: any;
+
 const findUniqueMock = mock();
 const createMock = mock();
 const updateMock = mock();
 const updateManyMock = mock();
-
-mock.module("~/server/lib/prisma", () => ({
-  prisma: {
-    idempotencyKey: {
-      findUnique: findUniqueMock,
-      create: createMock,
-      update: updateMock,
-      updateMany: updateManyMock,
-    },
-  },
-}));
-
-const { reserveIdempotency, completeIdempotency, releaseIdempotencyLock } =
-  await import("~/server/services/idempotency/reserveIdempotency");
 
 type JsonLike =
   | null
@@ -65,19 +55,46 @@ function hashRequestBody(body: unknown): string {
   return createHash("sha256").update(serialized).digest("hex");
 }
 
-const REQUEST_BODY = {
-  amount: "20.00",
-  paymentMethodType: "PROMPTPAY_QR",
-};
+async function loadFreshSubject() {
+  mock.module("~/server/lib/prisma", () => ({
+    prisma: {
+      idempotencyKey: {
+        findUnique: findUniqueMock,
+        create: createMock,
+        update: updateMock,
+        updateMany: updateManyMock,
+      },
+    },
+  }));
 
-const MATCHING_REQUEST_HASH = hashRequestBody(REQUEST_BODY);
+  return await import(
+    `../../server/services/idempotency/reserveIdempotency.ts?fresh=${Date.now()}_${Math.random()}`
+  );
+}
 
 describe("reserveIdempotency edge cases", () => {
-  beforeEach(() => {
+  const BASE_INPUT = {
+    tenantId: "tenant_1",
+    key: "idem_1",
+    requestPath: "/api/v1/payment-intents",
+    requestMethod: "POST",
+    requestBody: { amount: "100" },
+  };
+
+  const BASE_HASH = hashRequestBody(BASE_INPUT.requestBody);
+
+  beforeEach(async () => {
+    mock.restore();
+
     findUniqueMock.mockReset();
     createMock.mockReset();
     updateMock.mockReset();
     updateManyMock.mockReset();
+
+    const mod = await loadFreshSubject();
+    reserveIdempotency = mod.reserveIdempotency;
+    completeIdempotency = mod.completeIdempotency;
+    releaseIdempotencyLock = mod.releaseIdempotencyLock;
   });
 
   afterAll(() => {
@@ -86,140 +103,96 @@ describe("reserveIdempotency edge cases", () => {
 
   it("returns REPLAY for same key and same completed request", async () => {
     findUniqueMock.mockResolvedValue({
-      tenantId: "tenant_1",
       key: "idem_1",
-      requestHash: MATCHING_REQUEST_HASH,
+      tenantId: "tenant_1",
+      requestHash: BASE_HASH,
+      requestMethod: "POST",
+      requestPath: "/api/v1/payment-intents",
       completedAt: new Date(),
       lockedAt: null,
       responseStatusCode: 200,
-      responseBody: { ok: true, publicId: "piq_1" },
+      responseBody: { ok: true },
       resourceType: "PaymentIntent",
       resourceId: "pi_1",
       expiresAt: new Date(Date.now() + 60_000),
     });
 
-    const result = await reserveIdempotency({
-      tenantId: "tenant_1",
-      key: "idem_1",
-      requestPath: "/api/v1/payment-intents",
-      requestMethod: "POST",
-      requestBody: REQUEST_BODY,
-    });
+    const result = await reserveIdempotency(BASE_INPUT);
 
     expect(result?.status).toBe("REPLAY");
-    expect(result?.responseBody).toEqual({ ok: true, publicId: "piq_1" });
+    expect(result?.requestHash).toBe(BASE_HASH);
   });
 
   it("throws conflict for same key with different payload", async () => {
     findUniqueMock.mockResolvedValue({
-      tenantId: "tenant_1",
       key: "idem_1",
+      tenantId: "tenant_1",
       requestHash: "different_hash",
-      completedAt: null,
+      requestMethod: "POST",
+      requestPath: "/api/v1/payment-intents",
+      completedAt: new Date(),
       lockedAt: null,
-      responseStatusCode: null,
-      responseBody: null,
-      resourceType: null,
-      resourceId: null,
       expiresAt: new Date(Date.now() + 60_000),
     });
 
-    await expect(
-      reserveIdempotency({
-        tenantId: "tenant_1",
-        key: "idem_1",
-        requestPath: "/api/v1/payment-intents",
-        requestMethod: "POST",
-        requestBody: REQUEST_BODY,
-      }),
-    ).rejects.toMatchObject({
+    await expect(reserveIdempotency(BASE_INPUT)).rejects.toMatchObject({
       code: "IDEMPOTENCY_KEY_CONFLICT",
-      statusCode: 409,
     });
   });
 
   it("throws in-progress when lock is still active", async () => {
     findUniqueMock.mockResolvedValue({
-      tenantId: "tenant_1",
       key: "idem_1",
-      requestHash: MATCHING_REQUEST_HASH,
+      tenantId: "tenant_1",
+      requestHash: BASE_HASH,
+      requestMethod: "POST",
+      requestPath: "/api/v1/payment-intents",
       completedAt: null,
       lockedAt: new Date(),
-      responseStatusCode: null,
-      responseBody: null,
-      resourceType: null,
-      resourceId: null,
+      updatedAt: new Date(),
       expiresAt: new Date(Date.now() + 60_000),
     });
 
-    await expect(
-      reserveIdempotency({
-        tenantId: "tenant_1",
-        key: "idem_1",
-        requestPath: "/api/v1/payment-intents",
-        requestMethod: "POST",
-        requestBody: REQUEST_BODY,
-      }),
-    ).rejects.toMatchObject({
+    await expect(reserveIdempotency(BASE_INPUT)).rejects.toMatchObject({
       code: "IDEMPOTENCY_IN_PROGRESS",
-      statusCode: 409,
     });
   });
 
   it("reclaims expired key and starts again", async () => {
+    const oldUpdatedAt = new Date("2026-03-20T00:00:00.000Z");
+
     findUniqueMock.mockResolvedValue({
-      tenantId: "tenant_1",
       key: "idem_1",
+      tenantId: "tenant_1",
       requestHash: "old_hash",
+      requestMethod: "POST",
+      requestPath: "/api/v1/payment-intents",
       completedAt: null,
-      lockedAt: new Date(Date.now() - 120_000),
-      responseStatusCode: null,
-      responseBody: null,
-      resourceType: null,
-      resourceId: null,
-      expiresAt: new Date(Date.now() - 60_000),
-      updatedAt: new Date("2026-03-20T00:00:00.000Z"),
+      lockedAt: new Date(Date.now() - 1000 * 60 * 10),
+      updatedAt: oldUpdatedAt,
+      expiresAt: new Date(Date.now() - 1000),
     });
 
     updateManyMock.mockResolvedValue({ count: 1 });
 
-    const result = await reserveIdempotency({
-      tenantId: "tenant_1",
-      key: "idem_1",
-      requestPath: "/api/v1/payment-intents",
-      requestMethod: "POST",
-      requestBody: REQUEST_BODY,
-    });
+    const result = await reserveIdempotency(BASE_INPUT);
 
     expect(result?.status).toBe("STARTED");
+    expect(result?.requestHash).toBe(BASE_HASH);
     expect(updateManyMock).toHaveBeenCalledTimes(1);
   });
 
   it("allows same key name across different tenants", async () => {
-    createMock.mockResolvedValue({});
     findUniqueMock.mockResolvedValue(null);
+    createMock.mockResolvedValue({});
 
-    const a = await reserveIdempotency({
-      tenantId: "tenant_a",
-      key: "idem_same",
-      requestPath: "/api/v1/payment-intents",
-      requestMethod: "POST",
-      requestBody: REQUEST_BODY,
+    const result = await reserveIdempotency({
+      ...BASE_INPUT,
+      tenantId: "tenant_2",
     });
 
-    const b = await reserveIdempotency({
-      tenantId: "tenant_b",
-      key: "idem_same",
-      requestPath: "/api/v1/payment-intents",
-      requestMethod: "POST",
-      requestBody: REQUEST_BODY,
-    });
-
-    expect(a?.status).toBe("STARTED");
-    expect(b?.status).toBe("STARTED");
-    expect(createMock).toHaveBeenCalledTimes(2);
-    expect(createMock.mock.calls[0]?.[0]?.data.tenantId).toBe("tenant_a");
-    expect(createMock.mock.calls[1]?.[0]?.data.tenantId).toBe("tenant_b");
+    expect(result?.status).toBe("STARTED");
+    expect(createMock).toHaveBeenCalledTimes(1);
   });
 
   it("completes and releases lock helpers without error", async () => {

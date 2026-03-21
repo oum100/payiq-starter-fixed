@@ -96,14 +96,14 @@ describe("createPaymentIntent merchantOrderId scope", () => {
         merchantAccountId: "merchant_1",
         merchantCode: "store-a",
         scopes: ["payments:create"],
-      },
+      } as any,
       {
         merchantOrderId: "ORD-1001",
         merchantReference: "REF-1001",
         amount: "20.00",
         currency: "THB",
         paymentMethodType: "PROMPTPAY_QR",
-      },
+      } as any,
       {
         idempotencyKey: "idem-1",
       },

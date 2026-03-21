@@ -16,25 +16,26 @@ const prismaMock = {
   }),
 };
 
-mock.module("~/server/lib/prisma", () => ({
-  prisma: prismaMock,
-}));
-
 let applyPaymentTransition: any;
 let canTransition: any;
+
+async function loadFreshSubject() {
+  mock.module("~/server/lib/prisma", () => ({
+    prisma: prismaMock,
+  }));
+
+  // สำคัญมาก: ใช้ cache-busting import เพื่อไม่เอา stateMachine ที่ถูก mock
+  // จาก test ไฟล์อื่นมาก่อนหน้านี้กลับมาใช้ซ้ำ
+  const mod = await import(
+    `../../server/services/payments/stateMachine.ts?fresh=${Date.now()}_${Math.random()}`
+  );
+
+  return mod;
+}
 
 describe("payment state machine", () => {
   beforeEach(async () => {
     mock.restore();
-
-    mock.module("~/server/lib/prisma", () => ({
-      prisma: prismaMock,
-    }));
-
-    const mod = await import("~/server/services/payments/stateMachine");
-
-    applyPaymentTransition = mod.applyPaymentTransition;
-    canTransition = mod.canTransition;
 
     txMock.paymentIntent.findUnique.mockReset();
     txMock.paymentIntent.updateMany.mockReset();
@@ -46,6 +47,10 @@ describe("payment state machine", () => {
         return await fn(txMock);
       },
     );
+
+    const mod = await loadFreshSubject();
+    applyPaymentTransition = mod.applyPaymentTransition;
+    canTransition = mod.canTransition;
   });
 
   afterAll(() => {

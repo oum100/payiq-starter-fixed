@@ -57,6 +57,7 @@ describe("createPaymentIntent with state machine", () => {
     prismaMock.paymentIntent.findFirst.mockReset();
     prismaMock.paymentIntent.create.mockReset();
     prismaMock.providerAttempt.create.mockReset();
+
     reserveIdempotencyMock.mockReset();
     completeIdempotencyMock.mockReset();
     releaseIdempotencyLockMock.mockReset();
@@ -70,8 +71,11 @@ describe("createPaymentIntent with state machine", () => {
       tenantId: "t_1",
       status: "ACTIVE",
     });
+
     prismaMock.paymentIntent.findFirst.mockResolvedValue(null);
+
     reserveIdempotencyMock.mockResolvedValue(null);
+
     resolvePaymentRouteMock.mockResolvedValue({
       id: "route_1",
       providerCode: "SCB",
@@ -92,6 +96,7 @@ describe("createPaymentIntent with state machine", () => {
       merchantOrderId: "ord_1",
       expiresAt: new Date("2026-03-21T00:15:00.000Z"),
     });
+
     prismaMock.providerAttempt.create.mockResolvedValue({ id: "pa_1" });
   });
 
@@ -138,14 +143,19 @@ describe("createPaymentIntent with state machine", () => {
       });
 
     const result = await createPaymentIntent(
-      { tenantId: "t_1", merchantAccountId: "ma_1" } as any,
+      {
+        tenantId: "t_1",
+        merchantAccountId: "ma_1",
+      } as any,
       {
         amount: "100.00",
         paymentMethodType: "PROMPTPAY_QR",
         currency: "THB",
         merchantOrderId: "ord_1",
       } as any,
-      { idempotencyKey: "idem_1" },
+      {
+        idempotencyKey: "idem_1",
+      },
     );
 
     expect(applyPaymentTransitionMock).toHaveBeenCalledTimes(3);
@@ -194,14 +204,19 @@ describe("createPaymentIntent with state machine", () => {
       });
 
     const result = await createPaymentIntent(
-      { tenantId: "t_1", merchantAccountId: "ma_1" } as any,
+      {
+        tenantId: "t_1",
+        merchantAccountId: "ma_1",
+      } as any,
       {
         amount: "100.00",
         paymentMethodType: "PROMPTPAY_QR",
         currency: "THB",
         merchantOrderId: "ord_1",
       } as any,
-      { idempotencyKey: "idem_2" },
+      {
+        idempotencyKey: "idem_2",
+      },
     );
 
     expect(result.status).toBe("FAILED");

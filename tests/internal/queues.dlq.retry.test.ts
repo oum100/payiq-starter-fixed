@@ -67,6 +67,16 @@ mock.module("~/server/tasks/queue-policy", () => ({
   },
 }));
 
+const webhookEventFindUniqueMock = mock();
+
+mock.module("~/server/lib/prisma", () => ({
+  prisma: {
+    webhookEvent: {
+      findUnique: webhookEventFindUniqueMock,
+    },
+  },
+}));
+
 const handler = (await import("~/server/api/internal/queues/dlq/retry.post"))
   .default;
 
@@ -78,6 +88,7 @@ function makeEvent() {
     res: {},
     method: "POST",
     headers: {},
+    path: "/api/internal/queues/dlq/retry",
   } as any;
 }
 
@@ -88,11 +99,17 @@ describe("POST /api/internal/queues/dlq/retry", () => {
     webhookDeliveryAddMock.mockReset();
     providerCallbackAddMock.mockReset();
     reconcileAddMock.mockReset();
+    webhookEventFindUniqueMock.mockReset();
 
     webhookInboundAddMock.mockResolvedValue(undefined);
     webhookDeliveryAddMock.mockResolvedValue(undefined);
     providerCallbackAddMock.mockResolvedValue(undefined);
     reconcileAddMock.mockResolvedValue(undefined);
+    webhookEventFindUniqueMock.mockResolvedValue({
+      id: "wh_123",
+      tenantId: "tenant_1",
+      provider: "SCB",
+    });
   });
 
   afterAll(() => {
@@ -116,10 +133,19 @@ describe("POST /api/internal/queues/dlq/retry", () => {
     expect(result.queue).toBe("webhookInbound");
     expect(result.retried).toBe(1);
 
+    expect(webhookEventFindUniqueMock).toHaveBeenCalledTimes(1);
+
     expect(webhookInboundAddMock).toHaveBeenCalledTimes(1);
-    expect(webhookInboundAddMock).toHaveBeenCalledWith(
-      "provider.webhook.process",
-      { webhookEventId: "evt_123" },
+
+    const [jobName, payload, options] = webhookInboundAddMock.mock.calls[0]!;
+
+    expect(jobName).toBe("provider.webhook.process");
+    expect(payload).toEqual(
+      expect.objectContaining({
+        webhookEventId: "evt_123",
+      }),
+    );
+    expect(options).toEqual(
       expect.objectContaining({
         attempts: 5,
         removeOnComplete: 1000,
@@ -159,16 +185,31 @@ describe("POST /api/internal/queues/dlq/retry", () => {
 
     expect(result.ok).toBe(true);
     expect(reconcileAddMock).toHaveBeenCalledTimes(1);
-    expect(reconcileAddMock).toHaveBeenCalledWith(
-      "payment.reconcile.single",
-      { paymentIntentId: "pi_001" },
+
+    const [jobName, payload, options] = reconcileAddMock.mock.calls[0]!;
+
+    expect(jobName).toBe("payment.reconcile.single");
+    expect(payload).toEqual(
+      expect.objectContaining({
+        paymentIntentId: "pi_001",
+        meta: expect.objectContaining({
+          redriveQueue: "reconcile",
+          redriven: true,
+          redrivenFromDlq: true,
+        }),
+      }),
+    );
+    expect(options).toEqual(
       expect.objectContaining({
         attempts: 3,
+        removeOnComplete: 500,
+        removeOnFail: 2000,
         backoff: {
           type: "exponential",
           delay: 5000,
         },
       }),
     );
+    expect(String(options.jobId)).toContain("reconcile__redrive__pay_001");
   });
 });

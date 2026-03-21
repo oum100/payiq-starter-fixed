@@ -41,8 +41,8 @@ export async function reconcilePayment(paymentIntentId: string) {
             ? "MISMATCH"
             : "PENDING",
       inquiryAttemptCount: 1,
-      providerReference: inquiry.providerReference,
-      providerTxnId: inquiry.providerTransactionId,
+      providerReference: inquiry.providerReference ?? null,
+      providerTxnId: inquiry.providerTransactionId ?? null,
       providerSnapshot: inquiry.rawResponse as any,
       internalSnapshot: {
         status: payment.status,
@@ -59,10 +59,16 @@ export async function reconcilePayment(paymentIntentId: string) {
       toStatus: "SUCCEEDED",
       eventType: "RECONCILIATION_MATCHED",
       summary: "Payment corrected to SUCCEEDED by reconciliation",
-      allowedFrom: ["PENDING_PROVIDER", "AWAITING_CUSTOMER", "PROCESSING", "FAILED"],
+      allowedFrom: [
+        "PENDING_PROVIDER",
+        "AWAITING_CUSTOMER",
+        "PROCESSING",
+        "FAILED",
+      ],
       patch: {
         lastReconciledAt: new Date(),
-        providerReference: inquiry.providerReference ?? payment.providerReference,
+        providerReference:
+          inquiry.providerReference ?? payment.providerReference,
         providerTransactionId:
           inquiry.providerTransactionId ?? payment.providerTransactionId,
       },
@@ -93,7 +99,8 @@ export async function reconcilePayment(paymentIntentId: string) {
       where: { id: record.id },
       data: {
         status: "MISMATCH",
-        mismatchReason: "Provider inquiry returned FAILED while internal state is not corrected automatically",
+        mismatchReason:
+          "Provider inquiry returned FAILED while internal state is not corrected automatically",
       },
     });
 

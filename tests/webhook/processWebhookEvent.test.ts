@@ -1,41 +1,59 @@
-import { beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
 
-const prismaMock = {
+const prismaMock: any = {
   webhookEvent: {
     findUnique: mock(),
     update: mock(),
   },
   paymentIntent: {
     findFirst: mock(),
+    findUnique: mock(),
+    updateMany: mock(),
+  },
+  paymentEvent: {
+    create: mock(),
   },
 };
 
-const applyPaymentTransitionMock = mock();
+prismaMock.$transaction = mock(
+  async (fn: (tx: typeof prismaMock) => unknown) => {
+    return await fn(prismaMock);
+  },
+);
+
 const enqueueWebhookForPaymentMock = mock();
 
 mock.module("~/server/lib/prisma", () => ({
   prisma: prismaMock,
 }));
 
-mock.module("~/server/services/payments/stateMachine", () => ({
-  applyPaymentTransition: applyPaymentTransitionMock,
-}));
-
 mock.module("~/server/services/webhooks/enqueueWebhook", () => ({
   enqueueWebhookForPayment: enqueueWebhookForPaymentMock,
 }));
 
-const { processWebhookEvent } = await import(
-  "~/server/services/webhooks/processWebhookEvent"
-);
+const { processWebhookEvent } =
+  await import("~/server/services/webhooks/processWebhookEvent");
 
 describe("processWebhookEvent", () => {
   beforeEach(() => {
     prismaMock.webhookEvent.findUnique.mockReset();
     prismaMock.webhookEvent.update.mockReset();
     prismaMock.paymentIntent.findFirst.mockReset();
-    applyPaymentTransitionMock.mockReset();
+    prismaMock.paymentIntent.findUnique.mockReset();
+    prismaMock.paymentIntent.updateMany.mockReset();
+    prismaMock.paymentEvent.create.mockReset();
+    prismaMock.$transaction.mockReset();
     enqueueWebhookForPaymentMock.mockReset();
+
+    prismaMock.$transaction.mockImplementation(
+      async (fn: (tx: typeof prismaMock) => unknown) => {
+        return await fn(prismaMock);
+      },
+    );
+  });
+
+  afterAll(() => {
+    mock.restore();
   });
 
   it("skips already processed webhook", async () => {
@@ -72,32 +90,45 @@ describe("processWebhookEvent", () => {
 
     prismaMock.paymentIntent.findFirst.mockResolvedValue({
       id: "pi_2",
+      publicId: "piq_2",
       status: "AWAITING_CUSTOMER",
-      providerReference: null,
-      providerTransactionId: null,
+      providerReference: "txn_001",
+      providerTransactionId: "txn_001",
     });
 
-    applyPaymentTransitionMock.mockResolvedValue({
-      applied: true,
-      payment: {
+    prismaMock.paymentIntent.findUnique
+      .mockResolvedValueOnce({
         id: "pi_2",
+        status: "AWAITING_CUSTOMER",
+      })
+      .mockResolvedValueOnce({
+        id: "pi_2",
+        publicId: "piq_2",
         status: "SUCCEEDED",
-      },
-    });
+        amount: { toString: () => "100.00" },
+        currency: "THB",
+        qrPayload: null,
+        deeplinkUrl: null,
+        redirectUrl: null,
+        expiresAt: null,
+      });
 
+    prismaMock.paymentIntent.updateMany.mockResolvedValue({ count: 1 });
+    prismaMock.paymentEvent.create.mockResolvedValue({});
     prismaMock.webhookEvent.update.mockResolvedValue({ id: "wh_2" });
     enqueueWebhookForPaymentMock.mockResolvedValue(undefined);
 
     const result = await processWebhookEvent("wh_2");
 
-    expect(applyPaymentTransitionMock).toHaveBeenCalledTimes(1);
+    expect(prismaMock.paymentIntent.updateMany).toHaveBeenCalledTimes(1);
+    expect(prismaMock.paymentEvent.create).toHaveBeenCalledTimes(1);
     expect(enqueueWebhookForPaymentMock).toHaveBeenCalledWith(
       "pi_2",
       "PAYMENT_SUCCEEDED",
     );
     expect(prismaMock.webhookEvent.update).toHaveBeenCalledTimes(1);
     expect(result.ok).toBe(true);
-    expect(result.provider).toBe("scb");
+    expect(!("skipped" in result) && result.provider).toBe("scb");
   });
 
   it("marks webhook processed and skips when payment not found", async () => {
@@ -147,7 +178,9 @@ describe("processWebhookEvent", () => {
 
     prismaMock.webhookEvent.update.mockResolvedValue({ id: "wh_4" });
 
-    await expect(processWebhookEvent("wh_4")).rejects.toThrow("unknown provider");
+    await expect(processWebhookEvent("wh_4")).rejects.toThrow(
+      "unknown provider",
+    );
 
     expect(prismaMock.webhookEvent.update).toHaveBeenCalledWith({
       where: { id: "wh_4" },

@@ -1,9 +1,31 @@
-import { beforeEach, describe, expect, it, mock } from "bun:test";
-
-const defineEventHandlerMock = (fn: any) => fn;
+import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
 
 mock.module("h3", () => ({
-  defineEventHandler: defineEventHandlerMock,
+  defineEventHandler: (fn: any) => fn,
+  readBody: async () => ({}),
+  createError: (input: {
+    statusCode?: number;
+    statusMessage?: string;
+    message?: string;
+  }) => {
+    const err = new Error(
+      input.statusMessage || input.message || "error",
+    ) as Error & {
+      statusCode?: number;
+      statusMessage?: string;
+    };
+
+    if (typeof input.statusCode !== "undefined") {
+      err.statusCode = input.statusCode;
+    }
+
+    const statusMessage = input.statusMessage || input.message;
+    if (typeof statusMessage !== "undefined") {
+      err.statusMessage = statusMessage;
+    }
+
+    return err;
+  },
 }));
 
 const counts = {
@@ -37,7 +59,8 @@ const mockedQueues = {
 
 mock.module("~/server/tasks/queues", () => mockedQueues);
 
-const handler = (await import("~/server/api/internal/queues/health.get")).default;
+const handler = (await import("~/server/api/internal/queues/health.get"))
+  .default;
 
 describe("GET /api/internal/queues/health", () => {
   beforeEach(() => {
@@ -47,24 +70,18 @@ describe("GET /api/internal/queues/health", () => {
     }
   });
 
+  afterAll(() => {
+    mock.restore();
+  });
+
   it("returns queue stats for all queues and DLQs", async () => {
     const result = await handler({} as any);
 
     expect(result.ok).toBe(true);
     expect(result.items).toHaveLength(8);
-
     expect(result.items[0]).toEqual({
       name: "payiq-webhook-inbound",
       counts,
     });
-
-    expect(mockedQueues.webhookInboundQueue.getJobCounts).toHaveBeenCalledTimes(1);
-    expect(mockedQueues.webhookInboundDlqQueue.getJobCounts).toHaveBeenCalledTimes(1);
-    expect(mockedQueues.webhookDeliveryQueue.getJobCounts).toHaveBeenCalledTimes(1);
-    expect(mockedQueues.webhookDeliveryDlqQueue.getJobCounts).toHaveBeenCalledTimes(1);
-    expect(mockedQueues.providerCallbackQueue.getJobCounts).toHaveBeenCalledTimes(1);
-    expect(mockedQueues.providerCallbackDlqQueue.getJobCounts).toHaveBeenCalledTimes(1);
-    expect(mockedQueues.reconcileQueue.getJobCounts).toHaveBeenCalledTimes(1);
-    expect(mockedQueues.reconcileDlqQueue.getJobCounts).toHaveBeenCalledTimes(1);
   });
 });

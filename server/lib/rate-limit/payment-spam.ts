@@ -1,15 +1,11 @@
 import { createError, setResponseHeader, type H3Event } from "h3";
 import { redis } from "../redis";
 import { PAYMENT_SPAM_LIMITS } from "./config";
-import {
-  buildPaymentSpamKey,
-  buildTempBlockKey,
-} from "./keys";
+import { buildPaymentSpamKey, buildTempBlockKey } from "./keys";
 import { getClientIpHash, sha256 } from "./request";
 
 interface PaymentSpamInput {
   merchantAccountId: string;
-  apiKeyId: string;
   amount: string;
   currency: string;
   reference?: string | null;
@@ -18,7 +14,7 @@ interface PaymentSpamInput {
 export async function checkPaymentSpamOrThrow(
   event: H3Event,
   input: PaymentSpamInput,
-) {
+): Promise<void> {
   const ipHash = getClientIpHash(event);
 
   const blockedKey = buildTempBlockKey(
@@ -28,7 +24,7 @@ export async function checkPaymentSpamOrThrow(
 
   const blockedTtl = await redis.ttl(blockedKey);
   if (blockedTtl > 0) {
-    setResponseHeader(event, "Retry-After", String(blockedTtl));
+    setResponseHeader(event, "Retry-After", blockedTtl);
 
     throw createError({
       statusCode: 429,
@@ -59,18 +55,11 @@ export async function checkPaymentSpamOrThrow(
 
   const multi = redis.multi();
   multi.incr(duplicateRefKey);
-  multi.expire(
-    duplicateRefKey,
-    PAYMENT_SPAM_LIMITS.duplicateReference.ttlSec,
-  );
+  multi.expire(duplicateRefKey, PAYMENT_SPAM_LIMITS.duplicateReference.ttlSec);
   multi.incr(velocityKey);
-  multi.expire(
-    velocityKey,
-    PAYMENT_SPAM_LIMITS.amountVelocity.ttlSec,
-  );
+  multi.expire(velocityKey, PAYMENT_SPAM_LIMITS.amountVelocity.ttlSec);
 
   const results = await multi.exec();
-
   const duplicateCount = Number(results?.[0]?.[1] ?? 0);
   const velocityCount = Number(results?.[2]?.[1] ?? 0);
 
@@ -85,7 +74,7 @@ export async function checkPaymentSpamOrThrow(
     setResponseHeader(
       event,
       "Retry-After",
-      String(PAYMENT_SPAM_LIMITS.duplicateReference.blockSec),
+      PAYMENT_SPAM_LIMITS.duplicateReference.blockSec,
     );
 
     throw createError({
@@ -109,7 +98,7 @@ export async function checkPaymentSpamOrThrow(
     setResponseHeader(
       event,
       "Retry-After",
-      String(PAYMENT_SPAM_LIMITS.amountVelocity.blockSec),
+      PAYMENT_SPAM_LIMITS.amountVelocity.blockSec,
     );
 
     throw createError({

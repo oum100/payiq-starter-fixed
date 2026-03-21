@@ -1,4 +1,4 @@
-import { describe, expect, it, mock } from "bun:test";
+import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
 
 const merchantFindFirstMock = mock();
 const paymentIntentFindFirstMock = mock();
@@ -11,43 +11,46 @@ const paymentIntentUpdateMock = mock();
 const completeIdempotencyMock = mock();
 const releaseIdempotencyLockMock = mock();
 
-mock.module("~/server/lib/prisma", () => ({
-  prisma: {
-    merchantAccount: {
-      findFirst: merchantFindFirstMock,
+async function loadSubject() {
+  mock.module("~/server/lib/prisma", () => ({
+    prisma: {
+      merchantAccount: {
+        findFirst: merchantFindFirstMock,
+      },
+      paymentIntent: {
+        findFirst: paymentIntentFindFirstMock,
+        create: paymentIntentCreateMock,
+        update: paymentIntentUpdateMock,
+      },
+      providerAttempt: {
+        create: providerAttemptCreateMock,
+      },
     },
-    paymentIntent: {
-      findFirst: paymentIntentFindFirstMock,
-      create: paymentIntentCreateMock,
-      update: paymentIntentUpdateMock,
-    },
-    providerAttempt: {
-      create: providerAttemptCreateMock,
-    },
-  },
-}));
+  }));
 
-mock.module("~/server/services/idempotency/reserveIdempotency", () => ({
-  reserveIdempotency: reserveIdempotencyMock,
-  completeIdempotency: completeIdempotencyMock,
-  releaseIdempotencyLock: releaseIdempotencyLockMock,
-}));
+  mock.module("~/server/services/idempotency/reserveIdempotency", () => ({
+    reserveIdempotency: reserveIdempotencyMock,
+    completeIdempotency: completeIdempotencyMock,
+    releaseIdempotencyLock: releaseIdempotencyLockMock,
+  }));
 
-mock.module("~/server/services/routing/resolvePaymentRoute", () => ({
-  resolvePaymentRoute: resolvePaymentRouteMock,
-}));
+  mock.module("~/server/services/routing/resolvePaymentRoute", () => ({
+    resolvePaymentRoute: resolvePaymentRouteMock,
+  }));
 
-mock.module("~/server/services/providers/registry", () => ({
-  getProviderAdapter: () => ({
-    createPayment: providerCreatePaymentMock,
-  }),
-}));
+  mock.module("~/server/services/providers/registry", () => ({
+    getProviderAdapter: () => ({
+      createPayment: providerCreatePaymentMock,
+    }),
+  }));
 
-const { createPaymentIntent } =
-  await import("~/server/services/payments/createPaymentIntent");
+  return await import("~/server/services/payments/createPaymentIntent");
+}
 
 describe("createPaymentIntent merchantOrderId scope", () => {
-  it("looks up existing merchant order within the same tenant and merchant account", async () => {
+  beforeEach(() => {
+    mock.restore();
+
     merchantFindFirstMock.mockReset();
     paymentIntentFindFirstMock.mockReset();
     reserveIdempotencyMock.mockReset();
@@ -58,6 +61,14 @@ describe("createPaymentIntent merchantOrderId scope", () => {
     paymentIntentUpdateMock.mockReset();
     completeIdempotencyMock.mockReset();
     releaseIdempotencyLockMock.mockReset();
+  });
+
+  afterAll(() => {
+    mock.restore();
+  });
+
+  it("looks up existing merchant order within the same tenant and merchant account", async () => {
+    const { createPaymentIntent } = await loadSubject();
 
     merchantFindFirstMock.mockResolvedValue({
       id: "merchant_1",
@@ -85,14 +96,14 @@ describe("createPaymentIntent merchantOrderId scope", () => {
         merchantAccountId: "merchant_1",
         merchantCode: "store-a",
         scopes: ["payments:create"],
-      },
+      } as any,
       {
         merchantOrderId: "ORD-1001",
         merchantReference: "REF-1001",
         amount: "20.00",
         currency: "THB",
         paymentMethodType: "PROMPTPAY_QR",
-      },
+      } as any,
       {
         idempotencyKey: "idem-1",
       },

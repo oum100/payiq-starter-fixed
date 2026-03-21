@@ -1,15 +1,7 @@
-export function buildRateLimitKey(
-  scope: string,
-  identifier: string,
-  routeGroup: string,
-) {
-  return `rl:tb:v2:${scope}:${identifier}:${routeGroup}`;
-}
-
-export function buildPaymentSpamKey(...parts: string[]) {
+export function buildPaymentSpamKey(...parts: string[]): string {
   return `abuse:pay:v1:${parts.join(":")}`;
 }
 
-export function buildTempBlockKey(subject: string, identifier: string) {
+export function buildTempBlockKey(subject: string, identifier: string): string {
   return `block:v1:${subject}:${identifier}`;
 }

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
 
 const txMock = {
   paymentIntent: {
@@ -11,23 +11,50 @@ const txMock = {
 };
 
 const prismaMock = {
-  $transaction: async (fn: any) => fn(txMock),
+  $transaction: mock(async (fn: (tx: typeof txMock) => unknown) => {
+    return await fn(txMock);
+  }),
 };
 
-mock.module("~/server/lib/prisma", () => ({
-  prisma: prismaMock,
-}));
+let applyPaymentTransition: any;
+let canTransition: any;
 
-const {
-  applyPaymentTransition,
-  canTransition,
-} = await import("~/server/services/payments/stateMachine");
+async function loadFreshSubject() {
+  mock.module("~/server/lib/prisma", () => ({
+    prisma: prismaMock,
+  }));
+
+  // สำคัญมาก: ใช้ cache-busting import เพื่อไม่เอา stateMachine ที่ถูก mock
+  // จาก test ไฟล์อื่นมาก่อนหน้านี้กลับมาใช้ซ้ำ
+  const mod = await import(
+    `../../server/services/payments/stateMachine.ts?fresh=${Date.now()}_${Math.random()}`
+  );
+
+  return mod;
+}
 
 describe("payment state machine", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    mock.restore();
+
     txMock.paymentIntent.findUnique.mockReset();
     txMock.paymentIntent.updateMany.mockReset();
     txMock.paymentEvent.create.mockReset();
+
+    prismaMock.$transaction.mockReset();
+    prismaMock.$transaction.mockImplementation(
+      async (fn: (tx: typeof txMock) => unknown) => {
+        return await fn(txMock);
+      },
+    );
+
+    const mod = await loadFreshSubject();
+    applyPaymentTransition = mod.applyPaymentTransition;
+    canTransition = mod.canTransition;
+  });
+
+  afterAll(() => {
+    mock.restore();
   });
 
   it("allows valid transition AWAITING_CUSTOMER -> SUCCEEDED", async () => {
@@ -53,6 +80,7 @@ describe("payment state machine", () => {
 
     expect(result.applied).toBe(true);
     expect(result.payment.status).toBe("SUCCEEDED");
+    expect(txMock.paymentIntent.updateMany).toHaveBeenCalledTimes(1);
     expect(txMock.paymentEvent.create).toHaveBeenCalledTimes(1);
   });
 
@@ -98,6 +126,7 @@ describe("payment state machine", () => {
     });
 
     expect(result.applied).toBe(true);
+    expect(txMock.paymentIntent.updateMany).toHaveBeenCalledTimes(1);
     expect(txMock.paymentEvent.create).toHaveBeenCalledTimes(1);
   });
 

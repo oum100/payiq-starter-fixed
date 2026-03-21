@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
 
 const prismaMock = {
   merchantAccount: {
@@ -23,37 +23,41 @@ const getProviderAdapterMock = mock(() => ({
 }));
 const applyPaymentTransitionMock = mock();
 
-mock.module("~/server/lib/prisma", () => ({
-  prisma: prismaMock,
-}));
+async function loadSubject() {
+  mock.module("~/server/lib/prisma", () => ({
+    prisma: prismaMock,
+  }));
 
-mock.module("~/server/services/payments/stateMachine", () => ({
-  applyPaymentTransition: applyPaymentTransitionMock,
-}));
+  mock.module("~/server/services/payments/stateMachine", () => ({
+    applyPaymentTransition: applyPaymentTransitionMock,
+  }));
 
-mock.module("~/server/services/routing/resolvePaymentRoute", () => ({
-  resolvePaymentRoute: resolvePaymentRouteMock,
-}));
+  mock.module("~/server/services/routing/resolvePaymentRoute", () => ({
+    resolvePaymentRoute: resolvePaymentRouteMock,
+  }));
 
-mock.module("~/server/services/providers/registry", () => ({
-  getProviderAdapter: getProviderAdapterMock,
-}));
+  mock.module("~/server/services/providers/registry", () => ({
+    getProviderAdapter: getProviderAdapterMock,
+  }));
 
-mock.module("~/server/services/idempotency/reserveIdempotency", () => ({
-  reserveIdempotency: reserveIdempotencyMock,
-  completeIdempotency: completeIdempotencyMock,
-  releaseIdempotencyLock: releaseIdempotencyLockMock,
-}));
+  mock.module("~/server/services/idempotency/reserveIdempotency", () => ({
+    reserveIdempotency: reserveIdempotencyMock,
+    completeIdempotency: completeIdempotencyMock,
+    releaseIdempotencyLock: releaseIdempotencyLockMock,
+  }));
 
-const { createPaymentIntent } =
-  await import("~/server/services/payments/createPaymentIntent");
+  return await import("~/server/services/payments/createPaymentIntent");
+}
 
 describe("createPaymentIntent with state machine", () => {
   beforeEach(() => {
+    mock.restore();
+
     prismaMock.merchantAccount.findFirst.mockReset();
     prismaMock.paymentIntent.findFirst.mockReset();
     prismaMock.paymentIntent.create.mockReset();
     prismaMock.providerAttempt.create.mockReset();
+
     reserveIdempotencyMock.mockReset();
     completeIdempotencyMock.mockReset();
     releaseIdempotencyLockMock.mockReset();
@@ -67,8 +71,11 @@ describe("createPaymentIntent with state machine", () => {
       tenantId: "t_1",
       status: "ACTIVE",
     });
+
     prismaMock.paymentIntent.findFirst.mockResolvedValue(null);
+
     reserveIdempotencyMock.mockResolvedValue(null);
+
     resolvePaymentRouteMock.mockResolvedValue({
       id: "route_1",
       providerCode: "SCB",
@@ -89,10 +96,17 @@ describe("createPaymentIntent with state machine", () => {
       merchantOrderId: "ord_1",
       expiresAt: new Date("2026-03-21T00:15:00.000Z"),
     });
+
     prismaMock.providerAttempt.create.mockResolvedValue({ id: "pa_1" });
   });
 
+  afterAll(() => {
+    mock.restore();
+  });
+
   it("transitions to AWAITING_CUSTOMER on provider success", async () => {
+    const { createPaymentIntent } = await loadSubject();
+
     createPaymentMock.mockResolvedValue({
       success: true,
       providerReference: "ref_1",
@@ -150,6 +164,8 @@ describe("createPaymentIntent with state machine", () => {
   });
 
   it("transitions to FAILED on provider rejection", async () => {
+    const { createPaymentIntent } = await loadSubject();
+
     createPaymentMock.mockResolvedValue({
       success: false,
       errorCode: "PROVIDER_REJECTED",

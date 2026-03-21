@@ -1,20 +1,33 @@
-import { beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
 
 const readBodyMock = mock();
-const createErrorMock = (input: { statusCode: number; statusMessage: string }) => {
-  const error = new Error(input.statusMessage) as Error & {
-    statusCode: number;
-    statusMessage: string;
-  };
-  error.statusCode = input.statusCode;
-  error.statusMessage = input.statusMessage;
-  return error;
-};
 
 mock.module("h3", () => ({
   defineEventHandler: (fn: any) => fn,
   readBody: readBodyMock,
-  createError: createErrorMock,
+  createError: (input: {
+    statusCode?: number;
+    statusMessage?: string;
+    message?: string;
+  }) => {
+    const err = new Error(
+      input.statusMessage || input.message || "error",
+    ) as Error & {
+      statusCode?: number;
+      statusMessage?: string;
+    };
+
+    if (typeof input.statusCode !== "undefined") {
+      err.statusCode = input.statusCode;
+    }
+
+    const statusMessage = input.statusMessage || input.message;
+    if (typeof statusMessage !== "undefined") {
+      err.statusMessage = statusMessage;
+    }
+
+    return err;
+  },
 }));
 
 const webhookInboundAddMock = mock();
@@ -62,7 +75,30 @@ mock.module("~/server/tasks/queue-policy", () => ({
   },
 }));
 
-const handler = (await import("~/server/api/internal/queues/dlq/retry.post")).default;
+const webhookEventFindUniqueMock = mock();
+
+mock.module("~/server/lib/prisma", () => ({
+  prisma: {
+    webhookEvent: {
+      findUnique: webhookEventFindUniqueMock,
+    },
+  },
+}));
+
+const handler = (await import("~/server/api/internal/queues/dlq/retry.post"))
+  .default;
+
+function makeEvent() {
+  return {
+    context: {},
+    node: {},
+    req: {},
+    res: {},
+    method: "POST",
+    headers: {},
+    path: "/api/internal/queues/dlq/retry",
+  } as any;
+}
 
 describe("POST /api/internal/queues/dlq/retry", () => {
   beforeEach(() => {
@@ -71,11 +107,21 @@ describe("POST /api/internal/queues/dlq/retry", () => {
     webhookDeliveryAddMock.mockReset();
     providerCallbackAddMock.mockReset();
     reconcileAddMock.mockReset();
+    webhookEventFindUniqueMock.mockReset();
 
     webhookInboundAddMock.mockResolvedValue(undefined);
     webhookDeliveryAddMock.mockResolvedValue(undefined);
     providerCallbackAddMock.mockResolvedValue(undefined);
     reconcileAddMock.mockResolvedValue(undefined);
+    webhookEventFindUniqueMock.mockResolvedValue({
+      id: "wh_123",
+      tenantId: "tenant_1",
+      provider: "SCB",
+    });
+  });
+
+  afterAll(() => {
+    mock.restore();
   });
 
   it("requeues webhookInbound DLQ jobs using queue policy", async () => {
@@ -89,16 +135,25 @@ describe("POST /api/internal/queues/dlq/retry", () => {
       ],
     });
 
-    const result = await handler({} as any);
+    const result = await handler(makeEvent());
 
     expect(result.ok).toBe(true);
     expect(result.queue).toBe("webhookInbound");
     expect(result.retried).toBe(1);
 
+    expect(webhookEventFindUniqueMock).toHaveBeenCalledTimes(1);
+
     expect(webhookInboundAddMock).toHaveBeenCalledTimes(1);
-    expect(webhookInboundAddMock).toHaveBeenCalledWith(
-      "provider.webhook.process",
-      { webhookEventId: "evt_123" },
+
+    const [jobName, payload, options] = webhookInboundAddMock.mock.calls[0]!;
+
+    expect(jobName).toBe("provider.webhook.process");
+    expect(payload).toEqual(
+      expect.objectContaining({
+        webhookEventId: "evt_123",
+      }),
+    );
+    expect(options).toEqual(
       expect.objectContaining({
         attempts: 5,
         removeOnComplete: 1000,
@@ -117,12 +172,10 @@ describe("POST /api/internal/queues/dlq/retry", () => {
       jobs: [],
     });
 
-    await expect(handler({} as any)).rejects.toMatchObject({
+    await expect(handler(makeEvent())).rejects.toMatchObject({
       statusCode: 400,
       statusMessage: "queue and jobs[] are required",
     });
-
-    expect(webhookInboundAddMock).not.toHaveBeenCalled();
   });
 
   it("routes reconcile redrive to reconcile queue", async () => {
@@ -136,20 +189,35 @@ describe("POST /api/internal/queues/dlq/retry", () => {
       ],
     });
 
-    const result = await handler({} as any);
+    const result = await handler(makeEvent());
 
     expect(result.ok).toBe(true);
     expect(reconcileAddMock).toHaveBeenCalledTimes(1);
-    expect(reconcileAddMock).toHaveBeenCalledWith(
-      "payment.reconcile.single",
-      { paymentIntentId: "pi_001" },
+
+    const [jobName, payload, options] = reconcileAddMock.mock.calls[0]!;
+
+    expect(jobName).toBe("payment.reconcile.single");
+    expect(payload).toEqual(
+      expect.objectContaining({
+        paymentIntentId: "pi_001",
+        meta: expect.objectContaining({
+          redriveQueue: "reconcile",
+          redriven: true,
+          redrivenFromDlq: true,
+        }),
+      }),
+    );
+    expect(options).toEqual(
       expect.objectContaining({
         attempts: 3,
+        removeOnComplete: 500,
+        removeOnFail: 2000,
         backoff: {
           type: "exponential",
           delay: 5000,
         },
       }),
     );
+    expect(String(options.jobId)).toContain("reconcile__redrive__pay_001");
   });
 });

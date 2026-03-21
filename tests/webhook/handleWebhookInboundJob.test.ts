@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
 
 const prismaMock = {
   webhookEvent: {
@@ -250,4 +250,8 @@ describe("handleWebhookInboundJob", () => {
       },
     });
   });
+});
+
+afterAll(() => {
+  mock.restore();
 });

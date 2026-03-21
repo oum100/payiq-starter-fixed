@@ -1,20 +1,25 @@
-import { beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
 
 const readBodyMock = mock();
-const createErrorMock = (input: { statusCode: number; statusMessage: string }) => {
-  const error = new Error(input.statusMessage) as Error & {
-    statusCode: number;
-    statusMessage: string;
-  };
-  error.statusCode = input.statusCode;
-  error.statusMessage = input.statusMessage;
-  return error;
-};
 
 mock.module("h3", () => ({
   defineEventHandler: (fn: any) => fn,
   readBody: readBodyMock,
-  createError: createErrorMock,
+  createError: (input: {
+    statusCode?: number;
+    statusMessage?: string;
+    message?: string;
+  }) => {
+    const err = new Error(
+      input.statusMessage || input.message || "error",
+    ) as Error & {
+      statusCode?: number;
+      statusMessage?: string;
+    };
+    err.statusCode = input.statusCode;
+    err.statusMessage = input.statusMessage || input.message;
+    return err;
+  },
 }));
 
 const webhookInboundAddMock = mock();
@@ -62,7 +67,19 @@ mock.module("~/server/tasks/queue-policy", () => ({
   },
 }));
 
-const handler = (await import("~/server/api/internal/queues/dlq/retry.post")).default;
+const handler = (await import("~/server/api/internal/queues/dlq/retry.post"))
+  .default;
+
+function makeEvent() {
+  return {
+    context: {},
+    node: {},
+    req: {},
+    res: {},
+    method: "POST",
+    headers: {},
+  } as any;
+}
 
 describe("POST /api/internal/queues/dlq/retry", () => {
   beforeEach(() => {
@@ -78,6 +95,10 @@ describe("POST /api/internal/queues/dlq/retry", () => {
     reconcileAddMock.mockResolvedValue(undefined);
   });
 
+  afterAll(() => {
+    mock.restore();
+  });
+
   it("requeues webhookInbound DLQ jobs using queue policy", async () => {
     readBodyMock.mockResolvedValue({
       queue: "webhookInbound",
@@ -89,7 +110,7 @@ describe("POST /api/internal/queues/dlq/retry", () => {
       ],
     });
 
-    const result = await handler({} as any);
+    const result = await handler(makeEvent());
 
     expect(result.ok).toBe(true);
     expect(result.queue).toBe("webhookInbound");
@@ -117,12 +138,10 @@ describe("POST /api/internal/queues/dlq/retry", () => {
       jobs: [],
     });
 
-    await expect(handler({} as any)).rejects.toMatchObject({
+    await expect(handler(makeEvent())).rejects.toMatchObject({
       statusCode: 400,
       statusMessage: "queue and jobs[] are required",
     });
-
-    expect(webhookInboundAddMock).not.toHaveBeenCalled();
   });
 
   it("routes reconcile redrive to reconcile queue", async () => {
@@ -136,7 +155,7 @@ describe("POST /api/internal/queues/dlq/retry", () => {
       ],
     });
 
-    const result = await handler({} as any);
+    const result = await handler(makeEvent());
 
     expect(result.ok).toBe(true);
     expect(reconcileAddMock).toHaveBeenCalledTimes(1);

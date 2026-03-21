@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import { createHash } from "node:crypto";
 
 const findUniqueMock = mock();
@@ -78,6 +78,10 @@ describe("reserveIdempotency edge cases", () => {
     createMock.mockReset();
     updateMock.mockReset();
     updateManyMock.mockReset();
+  });
+
+  afterAll(() => {
+    mock.restore();
   });
 
   it("returns REPLAY for same key and same completed request", async () => {

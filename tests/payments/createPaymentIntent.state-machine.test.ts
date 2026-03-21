@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
 
 const prismaMock = {
   merchantAccount: {
@@ -23,33 +23,36 @@ const getProviderAdapterMock = mock(() => ({
 }));
 const applyPaymentTransitionMock = mock();
 
-mock.module("~/server/lib/prisma", () => ({
-  prisma: prismaMock,
-}));
+async function loadSubject() {
+  mock.module("~/server/lib/prisma", () => ({
+    prisma: prismaMock,
+  }));
 
-mock.module("~/server/services/payments/stateMachine", () => ({
-  applyPaymentTransition: applyPaymentTransitionMock,
-}));
+  mock.module("~/server/services/payments/stateMachine", () => ({
+    applyPaymentTransition: applyPaymentTransitionMock,
+  }));
 
-mock.module("~/server/services/routing/resolvePaymentRoute", () => ({
-  resolvePaymentRoute: resolvePaymentRouteMock,
-}));
+  mock.module("~/server/services/routing/resolvePaymentRoute", () => ({
+    resolvePaymentRoute: resolvePaymentRouteMock,
+  }));
 
-mock.module("~/server/services/providers/registry", () => ({
-  getProviderAdapter: getProviderAdapterMock,
-}));
+  mock.module("~/server/services/providers/registry", () => ({
+    getProviderAdapter: getProviderAdapterMock,
+  }));
 
-mock.module("~/server/services/idempotency/reserveIdempotency", () => ({
-  reserveIdempotency: reserveIdempotencyMock,
-  completeIdempotency: completeIdempotencyMock,
-  releaseIdempotencyLock: releaseIdempotencyLockMock,
-}));
+  mock.module("~/server/services/idempotency/reserveIdempotency", () => ({
+    reserveIdempotency: reserveIdempotencyMock,
+    completeIdempotency: completeIdempotencyMock,
+    releaseIdempotencyLock: releaseIdempotencyLockMock,
+  }));
 
-const { createPaymentIntent } =
-  await import("~/server/services/payments/createPaymentIntent");
+  return await import("~/server/services/payments/createPaymentIntent");
+}
 
 describe("createPaymentIntent with state machine", () => {
   beforeEach(() => {
+    mock.restore();
+
     prismaMock.merchantAccount.findFirst.mockReset();
     prismaMock.paymentIntent.findFirst.mockReset();
     prismaMock.paymentIntent.create.mockReset();
@@ -92,7 +95,13 @@ describe("createPaymentIntent with state machine", () => {
     prismaMock.providerAttempt.create.mockResolvedValue({ id: "pa_1" });
   });
 
+  afterAll(() => {
+    mock.restore();
+  });
+
   it("transitions to AWAITING_CUSTOMER on provider success", async () => {
+    const { createPaymentIntent } = await loadSubject();
+
     createPaymentMock.mockResolvedValue({
       success: true,
       providerReference: "ref_1",
@@ -129,19 +138,14 @@ describe("createPaymentIntent with state machine", () => {
       });
 
     const result = await createPaymentIntent(
-      {
-        tenantId: "t_1",
-        merchantAccountId: "ma_1",
-      } as any,
+      { tenantId: "t_1", merchantAccountId: "ma_1" } as any,
       {
         amount: "100.00",
         paymentMethodType: "PROMPTPAY_QR",
         currency: "THB",
         merchantOrderId: "ord_1",
       } as any,
-      {
-        idempotencyKey: "idem_1",
-      },
+      { idempotencyKey: "idem_1" },
     );
 
     expect(applyPaymentTransitionMock).toHaveBeenCalledTimes(3);
@@ -150,6 +154,8 @@ describe("createPaymentIntent with state machine", () => {
   });
 
   it("transitions to FAILED on provider rejection", async () => {
+    const { createPaymentIntent } = await loadSubject();
+
     createPaymentMock.mockResolvedValue({
       success: false,
       errorCode: "PROVIDER_REJECTED",
@@ -188,19 +194,14 @@ describe("createPaymentIntent with state machine", () => {
       });
 
     const result = await createPaymentIntent(
-      {
-        tenantId: "t_1",
-        merchantAccountId: "ma_1",
-      } as any,
+      { tenantId: "t_1", merchantAccountId: "ma_1" } as any,
       {
         amount: "100.00",
         paymentMethodType: "PROMPTPAY_QR",
         currency: "THB",
         merchantOrderId: "ord_1",
       } as any,
-      {
-        idempotencyKey: "idem_2",
-      },
+      { idempotencyKey: "idem_2" },
     );
 
     expect(result.status).toBe("FAILED");

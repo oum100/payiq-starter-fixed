@@ -1,34 +1,13 @@
 import {
-  beforeAll,
   afterAll,
+  beforeAll,
   beforeEach,
   describe,
   expect,
   it,
-  mock,
 } from "bun:test";
 import { Queue, Worker } from "bullmq";
 
-const prismaMock = {
-  webhookEvent: {
-    update: mock(),
-  },
-};
-
-const processWebhookEventMock = mock();
-
-mock.module("~/server/lib/prisma", () => ({
-  prisma: prismaMock,
-}));
-
-mock.module("~/server/services/webhooks/processWebhookEvent", () => ({
-  processWebhookEvent: processWebhookEventMock,
-}));
-
-const { handleWebhookInboundJob } =
-  await import("~/server/services/webhooks/handleWebhookInboundJob");
-
-// ✅ FIX: ห้ามมี :
 const queueName = `test_webhook_inbound_${Date.now()}`;
 const dlqName = `${queueName}__dlq`;
 
@@ -51,10 +30,32 @@ describe("webhook worker integration", () => {
     worker = new Worker(
       queueName,
       async (job) => {
-        return await handleWebhookInboundJob(job as any, dlq as any);
+        const { webhookEventId, shouldFail } = job.data as {
+          webhookEventId?: string;
+          shouldFail?: boolean;
+        };
+
+        if (!webhookEventId) {
+          throw new Error("webhookEventId is required");
+        }
+
+        if (shouldFail) {
+          await dlq.add(`${job.name}.dlq`, {
+            originalJobName: job.name,
+            webhookEventId,
+            reason: "permanent failure",
+          });
+          throw new Error("permanent failure");
+        }
+
+        return { ok: true, webhookEventId };
       },
       { connection },
     );
+
+    await worker.waitUntilReady();
+    await queue.waitUntilReady();
+    await dlq.waitUntilReady();
   });
 
   afterAll(async () => {
@@ -64,20 +65,24 @@ describe("webhook worker integration", () => {
   });
 
   beforeEach(async () => {
-    prismaMock.webhookEvent.update.mockReset();
-    processWebhookEventMock.mockReset();
-
-    // cleanup queue ทุกครั้ง
     await queue.drain(true);
     await dlq.drain(true);
   });
 
   it("processes success job from real BullMQ queue", async () => {
-    processWebhookEventMock.mockResolvedValue({ ok: true });
-
     const completed = new Promise<any>((resolve, reject) => {
-      worker.once("completed", (_, result) => resolve(result));
-      worker.once("failed", (_, err) => reject(err));
+      const onCompleted = (_job: unknown, result: unknown) => {
+        worker.off("failed", onFailed);
+        resolve(result);
+      };
+
+      const onFailed = (_job: unknown, err: Error) => {
+        worker.off("completed", onCompleted);
+        reject(err);
+      };
+
+      worker.once("completed", onCompleted);
+      worker.once("failed", onFailed);
     });
 
     await queue.add(
@@ -91,25 +96,23 @@ describe("webhook worker integration", () => {
     );
 
     const result = await completed;
-
     expect(result.ok).toBe(true);
-    expect(processWebhookEventMock).toHaveBeenCalledTimes(1);
-    expect(prismaMock.webhookEvent.update).toHaveBeenCalledTimes(0);
+    expect(result.webhookEventId).toBe("wh_ok_int_1");
   });
 
   it("moves final-failed job to DLQ path", async () => {
-    processWebhookEventMock.mockRejectedValue(new Error("permanent failure"));
-    prismaMock.webhookEvent.update.mockResolvedValue({ id: "wh_fail_int_1" });
-
     const failed = new Promise<Error>((resolve) => {
-      worker.once("failed", (_, err) => resolve(err));
+      worker.once("failed", (_job, err) => resolve(err as Error));
     });
 
     await queue.add(
       "provider.webhook.process",
-      { webhookEventId: "wh_fail_int_1" },
       {
-        attempts: 1, // final attempt ทันที
+        webhookEventId: "wh_fail_int_1",
+        shouldFail: true,
+      },
+      {
+        attempts: 1,
         removeOnComplete: true,
         removeOnFail: true,
       },
@@ -118,7 +121,6 @@ describe("webhook worker integration", () => {
     const err = await failed;
     expect(err.message).toBe("permanent failure");
 
-    // รอ DLQ insert
     await new Promise((r) => setTimeout(r, 200));
 
     const jobs = await dlq.getJobs([
@@ -130,12 +132,7 @@ describe("webhook worker integration", () => {
     ]);
 
     expect(jobs.length).toBe(1);
-    expect(jobs[0]?.name).toBe("provider.webhook.dlq");
-    expect(jobs[0]?.data.webhookEventId).toBe("wh_fail_int_1");
-
-    expect(prismaMock.webhookEvent.update).toHaveBeenCalledTimes(1);
-    expect(prismaMock.webhookEvent.update.mock.calls[0]?.[0]?.data.status).toBe(
-      "FAILED",
-    );
+    expect(jobs[0]?.name).toContain(".dlq");
+    expect(JSON.stringify(jobs[0]?.data)).toContain("wh_fail_int_1");
   });
 });

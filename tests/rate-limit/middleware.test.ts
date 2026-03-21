@@ -1,4 +1,6 @@
-import { beforeEach, describe, expect, it, mock } from "bun:test";
+import { beforeEach, afterAll, describe, expect, it, mock } from "bun:test";
+
+mock.restore();
 
 const checkMock = mock();
 
@@ -8,53 +10,14 @@ mock.module("~/server/lib/rate-limit/service", () => ({
   },
 }));
 
-mock.module("~/server/lib/rate-limit/resolve", () => ({
-  resolveRateLimitPolicies: mock(() => [
-    {
-      key: "rl:tb:v2:global:global:payments:create",
-      windowSec: 60,
-      scope: "global",
-      identifier: "global",
-      routeGroup: "payments:create",
-      capacity: 200,
-      refillRatePerSec: 200 / 60,
-      cost: 1,
-      ttlSec: 60,
-      blockDurationSec: 0,
-    },
-    {
-      key: "rl:tb:v2:tenant:ma_1:payments:create",
-      windowSec: 60,
-      scope: "tenant",
-      identifier: "ma_1",
-      routeGroup: "payments:create",
-      capacity: 120,
-      refillRatePerSec: 120 / 60,
-      cost: 1,
-      ttlSec: 60,
-      blockDurationSec: 0,
-    },
-    {
-      key: "rl:tb:v2:apiKey:ak_1:payments:create",
-      windowSec: 60,
-      scope: "apiKey",
-      identifier: "ak_1",
-      routeGroup: "payments:create",
-      capacity: 60,
-      refillRatePerSec: 1,
-      cost: 1,
-      ttlSec: 60,
-      blockDurationSec: 0,
-    },
-  ]),
-}));
-
 const handler = (await import("~/server/middleware/20.rate-limit")).default;
 
 function makeEvent() {
   const headers: Record<string, string> = {};
 
   return {
+    method: "POST",
+    path: "/api/v1/payment-intents",
     context: {
       auth: {
         apiKeyId: "ak_1",
@@ -62,6 +25,10 @@ function makeEvent() {
       },
     },
     node: {
+      req: {
+        method: "POST",
+        url: "/api/v1/payment-intents",
+      },
       res: {
         setHeader: (name: string, value: string | number) => {
           headers[name] = String(value);
@@ -75,6 +42,10 @@ function makeEvent() {
 describe("20.rate-limit middleware", () => {
   beforeEach(() => {
     checkMock.mockReset();
+  });
+
+  afterAll(() => {
+    mock.restore();
   });
 
   it("sets X-RateLimit headers when allowed", async () => {
@@ -142,10 +113,10 @@ describe("20.rate-limit middleware", () => {
     const event = makeEvent();
 
     await expect(handler(event)).rejects.toMatchObject({
+      code: "RATE_LIMIT_EXCEEDED",
       statusCode: 429,
-      statusMessage: "Too Many Requests",
-      data: {
-        code: "RATE_LIMIT_EXCEEDED",
+      message: "Too Many Requests",
+      details: {
         routeGroup: "payments:create",
         scope: "apiKey",
         retryAfterSec: 30,

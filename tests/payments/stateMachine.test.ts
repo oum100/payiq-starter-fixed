@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
 
 const txMock = {
   paymentIntent: {
@@ -11,23 +11,45 @@ const txMock = {
 };
 
 const prismaMock = {
-  $transaction: async (fn: any) => fn(txMock),
+  $transaction: mock(async (fn: (tx: typeof txMock) => unknown) => {
+    return await fn(txMock);
+  }),
 };
 
 mock.module("~/server/lib/prisma", () => ({
   prisma: prismaMock,
 }));
 
-const {
-  applyPaymentTransition,
-  canTransition,
-} = await import("~/server/services/payments/stateMachine");
+let applyPaymentTransition: any;
+let canTransition: any;
 
 describe("payment state machine", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    mock.restore();
+
+    mock.module("~/server/lib/prisma", () => ({
+      prisma: prismaMock,
+    }));
+
+    const mod = await import("~/server/services/payments/stateMachine");
+
+    applyPaymentTransition = mod.applyPaymentTransition;
+    canTransition = mod.canTransition;
+
     txMock.paymentIntent.findUnique.mockReset();
     txMock.paymentIntent.updateMany.mockReset();
     txMock.paymentEvent.create.mockReset();
+
+    prismaMock.$transaction.mockReset();
+    prismaMock.$transaction.mockImplementation(
+      async (fn: (tx: typeof txMock) => unknown) => {
+        return await fn(txMock);
+      },
+    );
+  });
+
+  afterAll(() => {
+    mock.restore();
   });
 
   it("allows valid transition AWAITING_CUSTOMER -> SUCCEEDED", async () => {
@@ -53,6 +75,7 @@ describe("payment state machine", () => {
 
     expect(result.applied).toBe(true);
     expect(result.payment.status).toBe("SUCCEEDED");
+    expect(txMock.paymentIntent.updateMany).toHaveBeenCalledTimes(1);
     expect(txMock.paymentEvent.create).toHaveBeenCalledTimes(1);
   });
 
@@ -98,6 +121,7 @@ describe("payment state machine", () => {
     });
 
     expect(result.applied).toBe(true);
+    expect(txMock.paymentIntent.updateMany).toHaveBeenCalledTimes(1);
     expect(txMock.paymentEvent.create).toHaveBeenCalledTimes(1);
   });
 

@@ -9,9 +9,7 @@ import {
   reserveIdempotency,
 } from "../idempotency/reserveIdempotency";
 import { getProviderAdapter } from "../providers/registry";
-import {
-  applyPaymentTransition,
-} from "~/server/services/payments/stateMachine";
+import { applyPaymentTransition } from "~/server/services/payments/stateMachine";
 import type {
   CreatePaymentIntentInput,
   CreatePaymentIntentResult,
@@ -28,7 +26,7 @@ function toResponse(paymentIntent: {
   deeplinkUrl: string | null;
   redirectUrl: string | null;
   expiresAt: Date | null;
-}) : CreatePaymentIntentResult {
+}): CreatePaymentIntentResult {
   return {
     publicId: paymentIntent.publicId,
     status: paymentIntent.status,
@@ -84,29 +82,29 @@ export async function createPaymentIntent(
     return toResponse(existingMerchantOrder);
   }
 
+  const idemKey = opts?.idempotencyKey ?? null;
+
   const idem = await reserveIdempotency({
     tenantId: auth.tenantId,
-    key: opts?.idempotencyKey,
+    key: idemKey,
     requestPath: "/api/v1/payment-intents",
     requestMethod: "POST",
     requestBody: input,
-    event: opts?.event ?? undefined,
+    ...(opts?.event ? { event: opts.event } : {}),
   });
 
   if (idem?.status === "REPLAY" && idem.responseBody) {
     return idem.responseBody as CreatePaymentIntentResult;
   }
 
-  let created:
-    | {
-        id: string;
-        publicId: string;
-        amount: any;
-        currency: string;
-        merchantOrderId: string | null;
-        expiresAt: Date | null;
-      }
-    | null = null;
+  let created: {
+    id: string;
+    publicId: string;
+    amount: { toString(): string };
+    currency: string;
+    merchantOrderId: string | null;
+    expiresAt: Date | null;
+  } | null = null;
 
   try {
     const route = await resolvePaymentRoute({
@@ -116,7 +114,7 @@ export async function createPaymentIntent(
     });
 
     const publicId = `piq_${nanoid(24)}`;
-    const callbackUrl = `${process.env.APP_BASE_URL}/api/v1/providers/scb/callback`;
+    const callbackUrl = `${process.env.APP_BASE_URL || ""}/api/v1/providers/scb/callback`;
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
 
     created = await prisma.paymentIntent.create({
@@ -126,9 +124,9 @@ export async function createPaymentIntent(
         paymentRouteId: route.id,
         billerProfileId: route.billerProfile.id,
         publicId,
-        merchantOrderId: input.merchantOrderId,
-        merchantReference: input.merchantReference,
-        idempotencyKeyValue: opts?.idempotencyKey || null,
+        merchantOrderId: input.merchantOrderId ?? null,
+        merchantReference: input.merchantReference ?? null,
+        idempotencyKeyValue: idemKey,
         paymentMethodType: "PROMPTPAY_QR",
         providerCode: route.providerCode,
         currency: "THB",
@@ -136,10 +134,12 @@ export async function createPaymentIntent(
         feeAmount: "0",
         netAmount: input.amount,
         status: "CREATED",
-        customerName: input.customerName,
-        customerEmail: input.customerEmail,
-        customerPhone: input.customerPhone,
-        metadata: input.metadata as any,
+        customerName: input.customerName ?? null,
+        customerEmail: input.customerEmail ?? null,
+        customerPhone: input.customerPhone ?? null,
+        ...(input.metadata !== undefined && {
+          metadata: input.metadata as any,
+        }),
         expiresAt,
         events: {
           create: [
@@ -204,12 +204,16 @@ export async function createPaymentIntent(
         providerCode: route.providerCode,
         providerEndpoint: "create-payment",
         httpMethod: "POST",
-        requestBody: providerResult.rawRequest as any,
-        responseBody: providerResult.rawResponse as any,
-        providerReference: providerResult.providerReference,
-        providerTxnId: providerResult.providerTransactionId,
-        errorCode: providerResult.errorCode,
-        errorMessage: providerResult.errorMessage,
+        ...(providerResult.rawRequest !== undefined && {
+          requestBody: providerResult.rawRequest as any,
+        }),
+        ...(providerResult.rawResponse !== undefined && {
+          responseBody: providerResult.rawResponse as any,
+        }),
+        providerReference: providerResult.providerReference ?? null,
+        providerTxnId: providerResult.providerTransactionId ?? null,
+        errorCode: providerResult.errorCode ?? null,
+        errorMessage: providerResult.errorMessage ?? null,
         sentAt: new Date(),
         completedAt: new Date(),
       },
@@ -222,26 +226,43 @@ export async function createPaymentIntent(
           eventType: "PROVIDER_ACCEPTED",
           summary: "Provider created payment successfully",
           patch: {
-            providerReference: providerResult.providerReference,
-            providerTransactionId: providerResult.providerTransactionId,
-            qrPayload: providerResult.qrPayload,
-            deeplinkUrl: providerResult.deeplinkUrl,
-            redirectUrl: providerResult.redirectUrl,
+            ...(providerResult.providerReference !== undefined && {
+              providerReference: providerResult.providerReference,
+            }),
+            ...(providerResult.providerTransactionId !== undefined && {
+              providerTransactionId: providerResult.providerTransactionId,
+            }),
+            ...(providerResult.qrPayload !== undefined && {
+              qrPayload: providerResult.qrPayload,
+            }),
+            ...(providerResult.deeplinkUrl !== undefined && {
+              deeplinkUrl: providerResult.deeplinkUrl,
+            }),
+            ...(providerResult.redirectUrl !== undefined && {
+              redirectUrl: providerResult.redirectUrl,
+            }),
           },
           payload: {
-            providerReference: providerResult.providerReference,
-            providerTransactionId: providerResult.providerTransactionId,
+            ...(providerResult.providerReference !== undefined && {
+              providerReference: providerResult.providerReference,
+            }),
+            ...(providerResult.providerTransactionId !== undefined && {
+              providerTransactionId: providerResult.providerTransactionId,
+            }),
           },
         })
       : await applyPaymentTransition({
           paymentIntentId: created.id,
           toStatus: "FAILED",
           eventType: "PROVIDER_REJECTED",
-          summary:
-            providerResult.errorMessage || "Provider rejected payment",
+          summary: providerResult.errorMessage || "Provider rejected payment",
           payload: {
-            errorCode: providerResult.errorCode,
-            errorMessage: providerResult.errorMessage,
+            ...(providerResult.errorCode !== undefined && {
+              errorCode: providerResult.errorCode,
+            }),
+            ...(providerResult.errorMessage !== undefined && {
+              errorMessage: providerResult.errorMessage,
+            }),
           },
         });
 
@@ -249,10 +270,10 @@ export async function createPaymentIntent(
 
     await completeIdempotency({
       tenantId: auth.tenantId,
-      key: opts?.idempotencyKey,
+      key: idemKey,
       responseStatusCode: 200,
       responseBody: response,
-      resourceType: "PaymentIntent",
+      resourceType: "Payment_Intent",
       resourceId: transitioned.payment.id,
     });
 
@@ -265,7 +286,13 @@ export async function createPaymentIntent(
           toStatus: "FAILED",
           eventType: "PAYMENT_FAILED",
           summary: "Payment failed due to internal/provider exception",
-          allowedFrom: ["CREATED", "ROUTING", "PENDING_PROVIDER", "AWAITING_CUSTOMER", "PROCESSING"],
+          allowedFrom: [
+            "CREATED",
+            "ROUTING",
+            "PENDING_PROVIDER",
+            "AWAITING_CUSTOMER",
+            "PROCESSING",
+          ],
           payload: {
             message:
               typeof error?.message === "string"
@@ -278,7 +305,7 @@ export async function createPaymentIntent(
 
         await completeIdempotency({
           tenantId: auth.tenantId,
-          key: opts?.idempotencyKey,
+          key: idemKey,
           responseStatusCode: 200,
           responseBody: failureResponse,
           resourceType: "PaymentIntent",
@@ -291,7 +318,7 @@ export async function createPaymentIntent(
       try {
         await releaseIdempotencyLock({
           tenantId: auth.tenantId,
-          key: opts?.idempotencyKey,
+          key: idemKey,
         });
       } catch {
         // best effort

@@ -12,16 +12,20 @@ type QueueLogInput = {
 };
 
 export function queueLog(input: QueueLogInput) {
+  const level = input.level ?? "info";
+
   logEvent({
-    level: input.level,
+    level,
     event: input.event,
     data: {
       queue: input.queue,
-      jobId: input.jobId,
-      jobName: input.jobName,
-      attemptsMade: input.attemptsMade,
+      ...(input.jobId !== undefined && { jobId: input.jobId }),
+      ...(input.jobName !== undefined && { jobName: input.jobName }),
+      ...(input.attemptsMade !== undefined && {
+        attemptsMade: input.attemptsMade,
+      }),
       ...(input.data ?? {}),
     },
-    error: input.error,
+    ...(input.error !== undefined && { error: input.error }),
   });
 }

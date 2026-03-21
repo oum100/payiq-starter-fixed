@@ -268,18 +268,27 @@ function buildWorker(params: {
       });
 
       try {
+        const meta = getJobMeta(job);
+        const data = getJobData(job);
+
         await runWithRequestContext(
           {
-            requestId: getJobMeta(job).requestId,
-            traceId: getJobMeta(job).traceId,
-            provider: getJobMeta(job).provider,
-            tenantId: getJobMeta(job).tenantId,
-            apiKeyPrefix: getJobMeta(job).apiKeyPrefix,
-            method: getJobMeta(job).method,
-            path: getJobMeta(job).path,
-            route: getJobMeta(job).route,
-            webhookEventId: getJobData(job).webhookEventId,
-            paymentIntentId: getJobData(job).paymentIntentId,
+            ...(meta.requestId !== undefined && { requestId: meta.requestId }),
+            ...(meta.traceId !== undefined && { traceId: meta.traceId }),
+            ...(meta.provider !== undefined && { provider: meta.provider }),
+            ...(meta.tenantId !== undefined && { tenantId: meta.tenantId }),
+            ...(meta.apiKeyPrefix !== undefined && {
+              apiKeyPrefix: meta.apiKeyPrefix,
+            }),
+            ...(meta.method !== undefined && { method: meta.method }),
+            ...(meta.path !== undefined && { path: meta.path }),
+            ...(meta.route !== undefined && { route: meta.route }),
+            ...(data.webhookEventId !== undefined && {
+              webhookEventId: data.webhookEventId,
+            }),
+            ...(data.paymentIntentId !== undefined && {
+              paymentIntentId: data.paymentIntentId,
+            }),
             queue: queueName,
             jobId: String(job.id),
             jobName: job.name,

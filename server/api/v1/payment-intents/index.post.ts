@@ -4,6 +4,7 @@ import { AppError } from "~/server/lib/errors";
 import { requireScope } from "~/server/services/auth/requireScope";
 import { checkPaymentSpamOrThrow } from "~/server/lib/rate-limit/payment-spam";
 import { requireApiKeyAuth } from "~/server/lib/auth";
+import type { CreatePaymentIntentInput } from "~/server/types/payment";
 
 const schema = z.object({
   merchantOrderId: z.string().optional(),
@@ -16,10 +17,6 @@ const schema = z.object({
   customerPhone: z.string().optional(),
   metadata: z.record(z.any()).optional(),
 });
-
-function getApiKeyId(auth: any): string | null {
-  return auth?.apiKeyId ?? auth?.apiKey?.id ?? auth?.id ?? null;
-}
 
 function getMerchantAccountId(auth: any): string | null {
   return (
@@ -36,15 +33,13 @@ export default defineEventHandler(async (event) => {
     requireScope(auth, "payments:create");
 
     const body = schema.parse(await readBody(event));
-    const idempotencyKey = getHeader(event, "idempotency-key");
-
-    const apiKeyId = getApiKeyId(auth);
+    const headerIdempotencyKey = getHeader(event, "idempotency-key");
+    const idempotencyKey = headerIdempotencyKey ?? null;
     const merchantAccountId = getMerchantAccountId(auth);
 
-    if (apiKeyId && merchantAccountId) {
+    if (merchantAccountId) {
       await checkPaymentSpamOrThrow(event, {
         merchantAccountId,
-        apiKeyId,
         amount: body.amount,
         currency: body.currency,
         reference:
@@ -55,7 +50,31 @@ export default defineEventHandler(async (event) => {
       });
     }
 
-    const result = await createPaymentIntent(auth, body, {
+    const input: CreatePaymentIntentInput = {
+      amount: body.amount,
+      currency: body.currency,
+      paymentMethodType: body.paymentMethodType,
+      ...(body.merchantOrderId !== undefined && {
+        merchantOrderId: body.merchantOrderId,
+      }),
+      ...(body.merchantReference !== undefined && {
+        merchantReference: body.merchantReference,
+      }),
+      ...(body.customerName !== undefined && {
+        customerName: body.customerName,
+      }),
+      ...(body.customerEmail !== undefined && {
+        customerEmail: body.customerEmail,
+      }),
+      ...(body.customerPhone !== undefined && {
+        customerPhone: body.customerPhone,
+      }),
+      ...(body.metadata !== undefined && {
+        metadata: body.metadata,
+      }),
+    };
+
+    const result = await createPaymentIntent(auth, input, {
       idempotencyKey,
       event,
     });
@@ -63,12 +82,10 @@ export default defineEventHandler(async (event) => {
     return result;
   } catch (error: any) {
     if (error instanceof AppError) {
-      if ((error.details as any)?.retryAfterSec) {
-        setResponseHeader(
-          event,
-          "Retry-After",
-          (error.details as any).retryAfterSec.toString(),
-        );
+      const retryAfterSec = (error.details as any)?.retryAfterSec;
+
+      if (typeof retryAfterSec === "number") {
+        setResponseHeader(event, "Retry-After", retryAfterSec);
       }
 
       setResponseStatus(event, error.statusCode);

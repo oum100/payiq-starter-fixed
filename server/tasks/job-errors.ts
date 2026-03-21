@@ -4,6 +4,9 @@ export class NonRetryableJobError extends Error {
   constructor(message: string, code?: string) {
     super(message);
     this.name = "NonRetryableJobError";
-    this.code = code;
+
+    if (code !== undefined) {
+      this.code = code;
+    }
   }
 }

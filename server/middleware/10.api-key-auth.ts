@@ -14,10 +14,7 @@ import {
   type RateLimitDecision,
 } from "~/server/lib/rate-limit/types";
 
-type AuthAbuseRouteGroup =
-  | "auth:malformed"
-  | "auth:unknown"
-  | "auth:failed";
+type AuthAbuseRouteGroup = "auth:malformed" | "auth:unknown" | "auth:failed";
 
 function isProtectedPath(path: string) {
   if (path === "/api/v1/health") return false;
@@ -30,6 +27,18 @@ function buildAuthCheckInput(
 ): CheckPolicyInput {
   const base = ROUTE_LIMITS[routeGroup];
 
+  // return toCheckPolicyInput(
+  //   routeGroup,
+  //   "ip",
+  //   { identifier: ipHash },
+  //   {
+  //     capacity: base.capacity,
+  //     refillRatePerSec: base.refillRatePerSec,
+  //     cost: base.cost,
+  //     ttlSec: base.ttlSec,
+  //     blockDurationSec: base.blockDurationSec,
+  //   },
+  // );
   return toCheckPolicyInput(
     routeGroup,
     "ip",
@@ -37,9 +46,11 @@ function buildAuthCheckInput(
     {
       capacity: base.capacity,
       refillRatePerSec: base.refillRatePerSec,
-      cost: base.cost,
-      ttlSec: base.ttlSec,
-      blockDurationSec: base.blockDurationSec,
+      ...(base.cost !== undefined && { cost: base.cost }),
+      ...(base.ttlSec !== undefined && { ttlSec: base.ttlSec }),
+      ...(base.blockDurationSec !== undefined && {
+        blockDurationSec: base.blockDurationSec,
+      }),
     },
   );
 }
@@ -88,7 +99,7 @@ export default defineEventHandler(async (event) => {
     await requireApiKeyAuth(event);
   } catch (error: unknown) {
     const message = String(
-      error instanceof Error ? error.message : error ?? "",
+      error instanceof Error ? error.message : (error ?? ""),
     );
 
     if (message.includes("Malformed API key")) {

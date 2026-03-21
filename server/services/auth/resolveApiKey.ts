@@ -56,8 +56,8 @@ export async function resolveApiKey(fullApiKey: string): Promise<AuthContext> {
     apiKeyPrefix: record.keyPrefix,
     tenantId: record.tenantId,
     tenantCode: record.tenant.code,
-    merchantAccountId: record.merchantAccountId || null,
-    merchantCode: record.merchantAccount?.code || null,
+    merchantAccountId: record.merchantAccountId ?? null,
+    merchantCode: record.merchantAccount?.code ?? null,
     scopes: record.scopes,
   };
 }

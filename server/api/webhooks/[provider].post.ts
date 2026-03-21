@@ -30,19 +30,12 @@ function getAllowedIps(): string[] {
 
 function normalizeIp(ip: string | null | undefined): string | null {
   if (!ip) return null;
-
-  if (ip.startsWith("::ffff:")) {
-    return ip.slice(7);
-  }
-
+  if (ip.startsWith("::ffff:")) return ip.slice(7);
   return ip;
 }
 
-function assertIpAllowed(
-  event: Parameters<typeof defineEventHandler>[0] extends never ? any : any,
-) {
+function assertIpAllowed(event: any) {
   const allowedIps = getAllowedIps();
-
   if (!allowedIps.length) return;
 
   const requestIp = normalizeIp(getRequestIP(event, { xForwardedFor: true }));
@@ -58,11 +51,9 @@ function getWebhookRateLimit(): number {
   return Math.floor(raw);
 }
 
-async function assertWebhookRateLimit(
-  event: Parameters<typeof defineEventHandler>[0] extends never ? any : any,
-  provider: string,
-) {
+async function assertWebhookRateLimit(event: any, provider: string) {
   const limit = getWebhookRateLimit();
+
   const requestIp =
     normalizeIp(getRequestIP(event, { xForwardedFor: true })) || "unknown";
 
@@ -81,8 +72,10 @@ async function assertWebhookRateLimit(
     const ttlMs = await redis.pttl(key);
     const retryAfterSec = ttlMs > 0 ? Math.max(1, Math.ceil(ttlMs / 1000)) : 60;
 
-    const error = new Error("rate limit exceeded");
-    (error as Error & { retryAfterSec?: number }).retryAfterSec = retryAfterSec;
+    const error = new Error("rate limit exceeded") as Error & {
+      retryAfterSec?: number;
+    };
+    error.retryAfterSec = retryAfterSec;
     throw error;
   }
 }
@@ -94,24 +87,24 @@ export default defineEventHandler(async (event) => {
     logEvent({
       level: "warn",
       event: "webhook.inbound.invalid_request",
-      data: {
-        reason: "missing_provider",
-      },
+      data: { reason: "missing_provider" },
     });
 
     setResponseStatus(event, 400);
     return { error: "missing provider" };
   }
 
-  setEventRequestContext(event, {
-    provider,
-  });
+  setEventRequestContext(event, { provider });
 
   const rawBody = (await readRawBody(event, "utf8")) || "";
   const signature = getHeader(event, "x-payiq-signature") || "";
   const timestamp = getHeader(event, "x-payiq-timestamp") || "";
   const eventId = getHeader(event, "x-payiq-event-id") || "";
-  const merchantId = getHeader(event, "x-merchant-id") || null;
+
+  // 🔥 FIX: normalize merchantId
+  const headerMerchantId = getHeader(event, "x-merchant-id");
+  const merchantId = headerMerchantId ?? null;
+
   const requestIp = normalizeIp(getRequestIP(event, { xForwardedFor: true }));
 
   logEvent({
@@ -185,18 +178,16 @@ export default defineEventHandler(async (event) => {
     data: {
       provider,
       eventId,
-      merchantId,
+      merchantId: merchantId ?? null,
       payload: rawBody,
       status: "RECEIVED",
       headersJson: {
         signature,
         timestamp,
-        merchantId,
+        ...(merchantId !== null && { merchantId }),
       },
     },
-    select: {
-      id: true,
-    },
+    select: { id: true },
   });
 
   setEventRequestContext(event, {
@@ -222,7 +213,7 @@ export default defineEventHandler(async (event) => {
       rawBody,
       signature,
       timestamp,
-      merchantId: merchantId || undefined,
+      ...(merchantId !== null && { merchantId }),
     });
 
     await prisma.webhookEvent.update({
@@ -248,14 +239,30 @@ export default defineEventHandler(async (event) => {
       {
         webhookEventId: created.id,
         meta: {
-          requestId: context.requestId,
-          traceId: context.traceId,
-          provider: context.provider,
-          tenantId: context.tenantId,
-          apiKeyPrefix: context.apiKeyPrefix,
-          method: context.method,
-          path: context.path,
-          route: context.route,
+          ...(context.requestId !== undefined && {
+            requestId: context.requestId,
+          }),
+          ...(context.traceId !== undefined && {
+            traceId: context.traceId,
+          }),
+          ...(context.provider !== undefined && {
+            provider: context.provider,
+          }),
+          ...(context.tenantId !== undefined && {
+            tenantId: context.tenantId,
+          }),
+          ...(context.apiKeyPrefix !== undefined && {
+            apiKeyPrefix: context.apiKeyPrefix,
+          }),
+          ...(context.method !== undefined && {
+            method: context.method,
+          }),
+          ...(context.path !== undefined && {
+            path: context.path,
+          }),
+          ...(context.route !== undefined && {
+            route: context.route,
+          }),
         },
       },
       {
@@ -285,8 +292,7 @@ export default defineEventHandler(async (event) => {
     return { ok: true };
   } catch (error) {
     const message = getErrorMessage(error);
-    const retryAfterSec = (error as Error & { retryAfterSec?: number })
-      ?.retryAfterSec;
+    const retryAfterSec = (error as any)?.retryAfterSec;
 
     await prisma.webhookEvent.update({
       where: { id: created.id },
@@ -309,8 +315,8 @@ export default defineEventHandler(async (event) => {
       error,
     });
 
-    if (retryAfterSec) {
-      event.node.res.setHeader("Retry-After", String(retryAfterSec));
+    if (typeof retryAfterSec === "number") {
+      event.node.res.setHeader("Retry-After", retryAfterSec);
     }
 
     if (message === "ip not allowed") {

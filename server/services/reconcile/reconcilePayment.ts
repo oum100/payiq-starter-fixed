@@ -1,23 +1,45 @@
-import { prisma } from "~/server/lib/prisma";
-import { getProviderAdapter } from "../providers/registry";
-import { enqueueWebhookForPayment } from "../webhooks/enqueueWebhook";
-import { applyPaymentTransition } from "~/server/services/payments/stateMachine";
+import { prisma } from "~/server/lib/prisma"
+import { applyPaymentTransition } from "~/server/services/payments/stateMachine"
+import { getProviderAdapter } from "../providers/registry"
+import { enqueueWebhookForPayment } from "../webhooks/enqueueWebhook"
 
-export async function reconcilePayment(paymentIntentId: string) {
+type ReconcileResult = {
+  ok: true
+  skipped?: boolean
+  corrected?: boolean
+  status?: string
+  reason?: string
+  recordId?: string
+}
+
+function mapReconciliationStatus(
+  inquiryStatus: "PENDING" | "SUCCEEDED" | "FAILED" | "EXPIRED",
+): "MATCHED" | "MISMATCH" | "PENDING" {
+  if (inquiryStatus === "SUCCEEDED") return "MATCHED"
+  if (inquiryStatus === "FAILED" || inquiryStatus === "EXPIRED") return "MISMATCH"
+  return "PENDING"
+}
+
+function isAlreadyFinal(status: string): boolean {
+  return ["SUCCEEDED", "FAILED", "EXPIRED", "REFUNDED", "REVERSED"].includes(status)
+}
+
+export async function reconcilePayment(paymentIntentId: string): Promise<ReconcileResult> {
   const payment = await prisma.paymentIntent.findUnique({
     where: { id: paymentIntentId },
     include: { billerProfile: true },
-  });
+  })
 
   if (!payment || !payment.billerProfile || !payment.providerCode) {
     return {
       ok: true,
       skipped: true,
       reason: "payment not reconcilable",
-    };
+    }
   }
 
-  const provider = getProviderAdapter(payment.providerCode);
+  const provider = getProviderAdapter(payment.providerCode)
+
   const inquiry = await provider.inquirePayment({
     providerReference: payment.providerReference,
     providerTransactionId: payment.providerTransactionId,
@@ -25,41 +47,68 @@ export async function reconcilePayment(paymentIntentId: string) {
       id: payment.billerProfile.id,
       providerCode: payment.billerProfile.providerCode,
       billerId: payment.billerProfile.billerId,
+      merchantIdAtProvider: payment.billerProfile.merchantIdAtProvider,
       credentialsEncrypted: payment.billerProfile.credentialsEncrypted,
       config: payment.billerProfile.config,
     },
-  });
+  })
 
-  const record = await prisma.reconciliationRecord.create({
+  const baseRecord = await prisma.reconciliationRecord.create({
     data: {
       paymentIntentId: payment.id,
       billerProfileId: payment.billerProfile.id,
-      status:
-        inquiry.status === "SUCCEEDED"
-          ? "MATCHED"
-          : inquiry.status === "FAILED"
-            ? "MISMATCH"
-            : "PENDING",
+      status: mapReconciliationStatus(inquiry.status),
       inquiryAttemptCount: 1,
       providerReference: inquiry.providerReference ?? null,
       providerTxnId: inquiry.providerTransactionId ?? null,
-      providerSnapshot: inquiry.rawResponse as any,
+      providerSnapshot: (inquiry.rawResponse ?? null) as never,
       internalSnapshot: {
         status: payment.status,
         providerReference: payment.providerReference,
         providerTransactionId: payment.providerTransactionId,
-      } as any,
+      } as never,
       checkedAt: new Date(),
     },
-  });
+  })
 
-  if (inquiry.status === "SUCCEEDED" && payment.status !== "SUCCEEDED") {
+  if (inquiry.status === "SUCCEEDED") {
+    if (payment.status === "SUCCEEDED") {
+      await prisma.reconciliationRecord.update({
+        where: { id: baseRecord.id },
+        data: {
+          status: "MATCHED",
+          correctionApplied: false,
+          correctionNote: "Internal and provider state already match",
+        },
+      })
+
+      await prisma.paymentIntent.update({
+        where: { id: payment.id },
+        data: {
+          lastReconciledAt: new Date(),
+          providerReference: inquiry.providerReference ?? payment.providerReference,
+          providerTransactionId:
+            inquiry.providerTransactionId ?? payment.providerTransactionId,
+        },
+      })
+
+      return {
+        ok: true,
+        corrected: false,
+        status: payment.status,
+        reason: "already matched",
+        recordId: baseRecord.id,
+      }
+    }
+
     const transition = await applyPaymentTransition({
       paymentIntentId: payment.id,
       toStatus: "SUCCEEDED",
       eventType: "RECONCILIATION_MATCHED",
       summary: "Payment corrected to SUCCEEDED by reconciliation",
       allowedFrom: [
+        "CREATED",
+        "ROUTING",
         "PENDING_PROVIDER",
         "AWAITING_CUSTOMER",
         "PROCESSING",
@@ -67,55 +116,177 @@ export async function reconcilePayment(paymentIntentId: string) {
       ],
       patch: {
         lastReconciledAt: new Date(),
-        providerReference:
-          inquiry.providerReference ?? payment.providerReference,
+        providerReference: inquiry.providerReference ?? payment.providerReference,
         providerTransactionId:
           inquiry.providerTransactionId ?? payment.providerTransactionId,
       },
-      payload: inquiry.rawResponse as any,
-    });
+      payload:
+        (inquiry.rawResponse as Record<string, unknown> | null) ?? {
+          providerStatus: inquiry.status,
+        },
+    })
 
     if (transition.applied) {
-      await enqueueWebhookForPayment(payment.id, "PAYMENT_SUCCEEDED");
+      await enqueueWebhookForPayment(payment.id, "PAYMENT_SUCCEEDED")
+
       await prisma.reconciliationRecord.update({
-        where: { id: record.id },
+        where: { id: baseRecord.id },
         data: {
           status: "CORRECTED",
           correctionApplied: true,
           correctionNote: "Payment corrected to SUCCEEDED",
         },
-      });
+      })
     }
 
     return {
       ok: true,
       corrected: transition.applied,
       status: transition.payment.status,
-    };
+      recordId: baseRecord.id,
+    }
   }
 
   if (inquiry.status === "FAILED") {
     await prisma.reconciliationRecord.update({
-      where: { id: record.id },
+      where: { id: baseRecord.id },
       data: {
         status: "MISMATCH",
+        correctionApplied: false,
         mismatchReason:
           "Provider inquiry returned FAILED while internal state is not corrected automatically",
       },
-    });
+    })
 
     return {
       ok: true,
       corrected: false,
       status: payment.status,
       reason: "provider reported failed",
-    };
+      recordId: baseRecord.id,
+    }
   }
+
+  if (inquiry.status === "EXPIRED") {
+    if (payment.status === "EXPIRED") {
+      await prisma.reconciliationRecord.update({
+        where: { id: baseRecord.id },
+        data: {
+          status: "MATCHED",
+          correctionApplied: false,
+          correctionNote: "Internal and provider state already expired",
+        },
+      })
+
+      await prisma.paymentIntent.update({
+        where: { id: payment.id },
+        data: {
+          lastReconciledAt: new Date(),
+          providerReference: inquiry.providerReference ?? payment.providerReference,
+          providerTransactionId:
+            inquiry.providerTransactionId ?? payment.providerTransactionId,
+        },
+      })
+
+      return {
+        ok: true,
+        corrected: false,
+        status: payment.status,
+        reason: "already expired",
+        recordId: baseRecord.id,
+      }
+    }
+
+    if (!isAlreadyFinal(payment.status)) {
+      const transition = await applyPaymentTransition({
+        paymentIntentId: payment.id,
+        toStatus: "EXPIRED",
+        eventType: "RECONCILIATION_MISMATCH",
+        summary: "Payment corrected to EXPIRED by reconciliation",
+        allowedFrom: [
+          "CREATED",
+          "ROUTING",
+          "PENDING_PROVIDER",
+          "AWAITING_CUSTOMER",
+          "PROCESSING",
+        ],
+        patch: {
+          lastReconciledAt: new Date(),
+          providerReference: inquiry.providerReference ?? payment.providerReference,
+          providerTransactionId:
+            inquiry.providerTransactionId ?? payment.providerTransactionId,
+          expiredAt: new Date(),
+        },
+        payload:
+          (inquiry.rawResponse as Record<string, unknown> | null) ?? {
+            providerStatus: inquiry.status,
+          },
+      })
+
+      if (transition.applied) {
+        await enqueueWebhookForPayment(payment.id, "PAYMENT_EXPIRED")
+
+        await prisma.reconciliationRecord.update({
+          where: { id: baseRecord.id },
+          data: {
+            status: "CORRECTED",
+            correctionApplied: true,
+            correctionNote: "Payment corrected to EXPIRED",
+          },
+        })
+      }
+
+      return {
+        ok: true,
+        corrected: transition.applied,
+        status: transition.payment.status,
+        recordId: baseRecord.id,
+      }
+    }
+
+    await prisma.reconciliationRecord.update({
+      where: { id: baseRecord.id },
+      data: {
+        status: "MISMATCH",
+        correctionApplied: false,
+        mismatchReason:
+          "Provider inquiry returned EXPIRED while internal state is already terminal and not auto-corrected",
+      },
+    })
+
+    return {
+      ok: true,
+      corrected: false,
+      status: payment.status,
+      reason: "provider reported expired",
+      recordId: baseRecord.id,
+    }
+  }
+
+  await prisma.reconciliationRecord.update({
+    where: { id: baseRecord.id },
+    data: {
+      status: "PENDING",
+      correctionApplied: false,
+      correctionNote: "Provider inquiry still pending",
+    },
+  })
+
+  await prisma.paymentIntent.update({
+    where: { id: payment.id },
+    data: {
+      lastReconciledAt: new Date(),
+      providerReference: inquiry.providerReference ?? payment.providerReference,
+      providerTransactionId:
+        inquiry.providerTransactionId ?? payment.providerTransactionId,
+    },
+  })
 
   return {
     ok: true,
     corrected: false,
     status: payment.status,
     reason: "reconciliation pending",
-  };
+    recordId: baseRecord.id,
+  }
 }

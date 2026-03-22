@@ -2,41 +2,63 @@ import type { H3Event } from "h3"
 import { nanoid } from "nanoid"
 import { prisma } from "~/server/lib/prisma"
 import { AppError } from "~/server/lib/errors"
-import { resolvePaymentRoute } from "../routing/resolvePaymentRoute"
+import { applyPaymentTransition } from "~/server/services/payments/stateMachine"
+import type { AuthContext } from "~/server/types/auth"
+import type {
+  CreatePaymentIntentInput,
+  CreatePaymentIntentResult,
+} from "~/server/types/payment"
 import {
   completeIdempotency,
   releaseIdempotencyLock,
   reserveIdempotency,
 } from "../idempotency/reserveIdempotency"
 import { getProviderAdapter } from "../providers/registry"
-import { applyPaymentTransition } from "~/server/services/payments/stateMachine"
-import type {
-  CreatePaymentIntentInput,
-  CreatePaymentIntentResult,
-} from "~/server/types/payment"
-import type { AuthContext } from "~/server/types/auth"
+import { resolvePaymentRoute } from "../routing/resolvePaymentRoute"
+
+function stringifyAmount(value: unknown): string {
+  if (value === null || value === undefined) return "0"
+  if (typeof value === "string") return value
+  if (typeof value === "number") return String(value)
+  if (typeof value === "bigint") return value.toString()
+  if (
+    typeof value === "object" &&
+    value !== null &&
+    "toString" in value &&
+    typeof value.toString === "function"
+  ) {
+    return value.toString()
+  }
+  return "0"
+}
 
 function toResponse(paymentIntent: {
   id?: string
   publicId: string
   status: string
-  amount: { toString(): string }
-  currency: string
-  qrPayload: string | null
-  deeplinkUrl: string | null
-  redirectUrl: string | null
-  expiresAt: Date | null
+  amount?: unknown
+  currency?: string | null
+  qrPayload?: string | null
+  deeplinkUrl?: string | null
+  redirectUrl?: string | null
+  expiresAt?: Date | null
 }): CreatePaymentIntentResult {
   return {
     publicId: paymentIntent.publicId,
     status: paymentIntent.status,
-    amount: paymentIntent.amount.toString(),
-    currency: paymentIntent.currency,
-    qrPayload: paymentIntent.qrPayload,
-    deeplinkUrl: paymentIntent.deeplinkUrl,
-    redirectUrl: paymentIntent.redirectUrl,
+    amount: stringifyAmount(paymentIntent.amount),
+    currency: paymentIntent.currency || "THB",
+    qrPayload: paymentIntent.qrPayload ?? null,
+    deeplinkUrl: paymentIntent.deeplinkUrl ?? null,
+    redirectUrl: paymentIntent.redirectUrl ?? null,
     expiresAt: paymentIntent.expiresAt?.toISOString() || null,
   }
+}
+
+function buildProviderCallbackUrl(providerCode: string): string {
+  const baseUrl = (process.env.APP_BASE_URL || "").replace(/\/+$/, "")
+  const providerSegment = providerCode.toLowerCase()
+  return `${baseUrl}/api/v1/providers/${providerSegment}/callback`
 }
 
 export async function createPaymentIntent(
@@ -100,7 +122,7 @@ export async function createPaymentIntent(
   let created: {
     id: string
     publicId: string
-    amount: { toString(): string }
+    amount: unknown
     currency: string
     merchantOrderId: string | null
     expiresAt: Date | null
@@ -114,7 +136,7 @@ export async function createPaymentIntent(
     })
 
     const publicId = `piq_${nanoid(24)}`
-    const callbackUrl = `${process.env.APP_BASE_URL || ""}/api/v1/providers/scb/callback`
+    const callbackUrl = buildProviderCallbackUrl(route.providerCode)
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000)
 
     created = await prisma.paymentIntent.create({
@@ -137,9 +159,9 @@ export async function createPaymentIntent(
         customerName: input.customerName ?? null,
         customerEmail: input.customerEmail ?? null,
         customerPhone: input.customerPhone ?? null,
-        ...(input.metadata !== undefined && {
-          metadata: input.metadata as never,
-        }),
+        ...(input.metadata !== undefined
+          ? { metadata: input.metadata as never }
+          : {}),
         expiresAt,
         events: {
           create: [
@@ -180,7 +202,7 @@ export async function createPaymentIntent(
     const providerResult = await provider.createPayment({
       paymentIntentId: created.id,
       publicId: created.publicId,
-      amount: created.amount.toString(),
+      amount: stringifyAmount(created.amount),
       currency: created.currency,
       merchantOrderId: created.merchantOrderId,
       merchantReference: input.merchantReference ?? null,
@@ -206,12 +228,12 @@ export async function createPaymentIntent(
         providerCode: route.providerCode,
         providerEndpoint: "create-payment",
         httpMethod: "POST",
-        ...(providerResult.rawRequest !== undefined && {
-          requestBody: providerResult.rawRequest as never,
-        }),
-        ...(providerResult.rawResponse !== undefined && {
-          responseBody: providerResult.rawResponse as never,
-        }),
+        ...(providerResult.rawRequest !== undefined
+          ? { requestBody: providerResult.rawRequest as never }
+          : {}),
+        ...(providerResult.rawResponse !== undefined
+          ? { responseBody: providerResult.rawResponse as never }
+          : {}),
         providerReference: providerResult.providerReference ?? null,
         providerTxnId: providerResult.providerTransactionId ?? null,
         errorCode: providerResult.errorCode ?? null,
@@ -228,29 +250,29 @@ export async function createPaymentIntent(
           eventType: "PROVIDER_ACCEPTED",
           summary: "Provider created payment successfully",
           patch: {
-            ...(providerResult.providerReference !== undefined && {
-              providerReference: providerResult.providerReference,
-            }),
-            ...(providerResult.providerTransactionId !== undefined && {
-              providerTransactionId: providerResult.providerTransactionId,
-            }),
-            ...(providerResult.qrPayload !== undefined && {
-              qrPayload: providerResult.qrPayload,
-            }),
-            ...(providerResult.deeplinkUrl !== undefined && {
-              deeplinkUrl: providerResult.deeplinkUrl,
-            }),
-            ...(providerResult.redirectUrl !== undefined && {
-              redirectUrl: providerResult.redirectUrl,
-            }),
+            ...(providerResult.providerReference !== undefined
+              ? { providerReference: providerResult.providerReference }
+              : {}),
+            ...(providerResult.providerTransactionId !== undefined
+              ? { providerTransactionId: providerResult.providerTransactionId }
+              : {}),
+            ...(providerResult.qrPayload !== undefined
+              ? { qrPayload: providerResult.qrPayload }
+              : {}),
+            ...(providerResult.deeplinkUrl !== undefined
+              ? { deeplinkUrl: providerResult.deeplinkUrl }
+              : {}),
+            ...(providerResult.redirectUrl !== undefined
+              ? { redirectUrl: providerResult.redirectUrl }
+              : {}),
           },
           payload: {
-            ...(providerResult.providerReference !== undefined && {
-              providerReference: providerResult.providerReference,
-            }),
-            ...(providerResult.providerTransactionId !== undefined && {
-              providerTransactionId: providerResult.providerTransactionId,
-            }),
+            ...(providerResult.providerReference !== undefined
+              ? { providerReference: providerResult.providerReference }
+              : {}),
+            ...(providerResult.providerTransactionId !== undefined
+              ? { providerTransactionId: providerResult.providerTransactionId }
+              : {}),
           },
         })
       : await applyPaymentTransition({
@@ -259,12 +281,12 @@ export async function createPaymentIntent(
           eventType: "PROVIDER_REJECTED",
           summary: providerResult.errorMessage || "Provider rejected payment",
           payload: {
-            ...(providerResult.errorCode !== undefined && {
-              errorCode: providerResult.errorCode,
-            }),
-            ...(providerResult.errorMessage !== undefined && {
-              errorMessage: providerResult.errorMessage,
-            }),
+            ...(providerResult.errorCode !== undefined
+              ? { errorCode: providerResult.errorCode }
+              : {}),
+            ...(providerResult.errorMessage !== undefined
+              ? { errorMessage: providerResult.errorMessage }
+              : {}),
           },
         })
 

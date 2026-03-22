@@ -9,7 +9,6 @@ type ReconcileResult = {
   corrected?: boolean
   status?: string
   reason?: string
-  recordId?: string
 }
 
 function mapReconciliationStatus(
@@ -97,7 +96,6 @@ export async function reconcilePayment(paymentIntentId: string): Promise<Reconci
         corrected: false,
         status: payment.status,
         reason: "already matched",
-        recordId: baseRecord.id,
       }
     }
 
@@ -143,7 +141,6 @@ export async function reconcilePayment(paymentIntentId: string): Promise<Reconci
       ok: true,
       corrected: transition.applied,
       status: transition.payment.status,
-      recordId: baseRecord.id,
     }
   }
 
@@ -163,7 +160,6 @@ export async function reconcilePayment(paymentIntentId: string): Promise<Reconci
       corrected: false,
       status: payment.status,
       reason: "provider reported failed",
-      recordId: baseRecord.id,
     }
   }
 
@@ -193,7 +189,6 @@ export async function reconcilePayment(paymentIntentId: string): Promise<Reconci
         corrected: false,
         status: payment.status,
         reason: "already expired",
-        recordId: baseRecord.id,
       }
     }
 
@@ -240,7 +235,6 @@ export async function reconcilePayment(paymentIntentId: string): Promise<Reconci
         ok: true,
         corrected: transition.applied,
         status: transition.payment.status,
-        recordId: baseRecord.id,
       }
     }
 
@@ -259,7 +253,6 @@ export async function reconcilePayment(paymentIntentId: string): Promise<Reconci
       corrected: false,
       status: payment.status,
       reason: "provider reported expired",
-      recordId: baseRecord.id,
     }
   }
 
@@ -287,6 +280,5 @@ export async function reconcilePayment(paymentIntentId: string): Promise<Reconci
     corrected: false,
     status: payment.status,
     reason: "reconciliation pending",
-    recordId: baseRecord.id,
   }
 }

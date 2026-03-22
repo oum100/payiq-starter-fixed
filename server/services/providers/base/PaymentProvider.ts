@@ -1,18 +1,22 @@
+export type ProviderBillerProfile = {
+  id: string
+  providerCode: string
+  billerId?: string | null
+  merchantIdAtProvider?: string | null
+  credentialsEncrypted: unknown
+  config?: unknown
+}
+
 export type CreateProviderPaymentInput = {
   paymentIntentId: string
   publicId: string
   amount: string
   currency: string
   merchantOrderId?: string | null
+  merchantReference?: string | null
   expiresAt?: string | null
   callbackUrl: string
-  billerProfile: {
-    id: string
-    providerCode: string
-    billerId?: string | null
-    credentialsEncrypted: unknown
-    config?: unknown
-  }
+  billerProfile: ProviderBillerProfile
 }
 
 export type CreateProviderPaymentResult = {
@@ -36,16 +40,13 @@ export type ProviderInquiryResult = {
 }
 
 export interface PaymentProvider {
-  createPayment(input: CreateProviderPaymentInput): Promise<CreateProviderPaymentResult>
+  createPayment(
+    input: CreateProviderPaymentInput,
+  ): Promise<CreateProviderPaymentResult>
+
   inquirePayment(input: {
     providerReference?: string | null
     providerTransactionId?: string | null
-    billerProfile: {
-      id: string
-      providerCode: string
-      billerId?: string | null
-      credentialsEncrypted: unknown
-      config?: unknown
-    }
+    billerProfile: ProviderBillerProfile
   }): Promise<ProviderInquiryResult>
 }

@@ -1,23 +1,41 @@
-import { verifyScbCallbackSignature } from "~/server/services/providers/scb/scb.signature"
 import { storeProviderCallback } from "~/server/services/callbacks/storeProviderCallback"
+import { verifyScbCallbackSignature } from "~/server/services/providers/scb/scb.signature"
+import { normalizeScbCallback } from "~/server/services/providers/scb/scb.webhook"
 
 export default defineEventHandler(async (event) => {
   const rawBody = (await readRawBody(event, "utf8")) || "{}"
-  const body = JSON.parse(rawBody)
-  const incomingSig = getHeader(event, "x-signature") || getHeader(event, "authorization") || ""
+  const headers = getHeaders(event)
+  const normalized = normalizeScbCallback({
+    rawBody,
+    headers,
+  })
 
-  const signatureValid = verifyScbCallbackSignature(process.env.SCB_CALLBACK_SECRET || "", rawBody, incomingSig)
+  const signatureValid = verifyScbCallbackSignature(
+    process.env.SCB_CALLBACK_SECRET || "",
+    rawBody,
+    normalized.signatureHeader,
+  )
 
   const result = await storeProviderCallback({
     providerCode: "SCB",
     rawBody,
-    body,
-    headers: getHeaders(event),
-    queryParams: getQuery(event) as Record<string, unknown>,
+    body: normalized.enrichedBody,
+    headers,
+    queryParams: {
+      ...(getQuery(event) as Record<string, unknown>),
+      _normalized: {
+        externalStatus: normalized.externalStatus,
+        normalizedStatus: normalized.normalizedStatus,
+        eventId: normalized.eventId,
+      },
+    },
     signatureValid,
-    providerReference: body?.partnerPaymentId || body?.data?.partnerPaymentId || null,
-    providerTxnId: body?.transactionId || body?.data?.transactionId || null,
+    providerReference: normalized.providerReference,
+    providerTxnId: normalized.providerTxnId,
   })
 
-  return { received: true, duplicate: result.duplicate }
+  return {
+    received: true,
+    duplicate: result.duplicate,
+  }
 })
